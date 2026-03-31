@@ -1,6 +1,8 @@
 package irrd
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -222,7 +224,22 @@ func downloadAndVerifyHash(url, expectedHash string) (io.ReadCloser, error) {
 		}
 	}
 
-	return io.NopCloser(strings.NewReader(string(data))), nil
+	// Decompress gzip if needed
+	var reader io.Reader = bytes.NewReader(data)
+	if strings.HasSuffix(url, ".gz") {
+		gr, err := gzip.NewReader(reader)
+		if err != nil {
+			return nil, fmt.Errorf("decompressing %s: %w", url, err)
+		}
+		decompressed, err := io.ReadAll(gr)
+		gr.Close()
+		if err != nil {
+			return nil, fmt.Errorf("decompressing %s: %w", url, err)
+		}
+		return io.NopCloser(bytes.NewReader(decompressed)), nil
+	}
+
+	return io.NopCloser(reader), nil
 }
 
 // resolveNRTMv4URLs resolves relative URLs in the notification file against the base URL.
