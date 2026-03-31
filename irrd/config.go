@@ -8,18 +8,18 @@ import (
 
 // UpstreamConfig defines a single IRRD upstream source.
 type UpstreamConfig struct {
-	Name      string `json:"name"`
-	DumpURI   string `json:"dump_uri"`
-	SerialURI string `json:"serial_uri"`
+	Name       string `json:"name"`
+	DumpURI    string `json:"dump_uri"`
+	SerialURI  string `json:"serial_uri"`
 	TelnetHost string `json:"telnet_host"`
 	TelnetPort int    `json:"telnet_port"`
 }
 
 // Config holds all application settings.
 type Config struct {
-	CacheDataDirectory  string            `json:"cache_data_directory"`
-	WhoisUpdateInterval int               `json:"whois_update_interval"` // seconds
-	HTTPEndpoint        string            `json:"http_endpoint"`
+	CacheDataDirectory  string                    `json:"cache_data_directory"`
+	WhoisUpdateInterval int                       `json:"whois_update_interval"` // seconds
+	HTTPEndpoint        string                    `json:"http_endpoint"`
 	Upstreams           map[string]UpstreamConfig `json:"upstreams"`
 }
 
@@ -32,8 +32,8 @@ func DefaultConfig() *Config {
 		Upstreams: map[string]UpstreamConfig{
 			"RADB": {
 				Name:       "RADB",
-				DumpURI:    "https://ftp.radb.net/radb/dbase/radb.db.gz",
-				SerialURI:  "https://ftp.radb.net/radb/dbase/RADB.CURRENTSERIAL",
+				DumpURI:    "ftp://ftp.radb.net/radb/dbase/radb.db.gz",
+				SerialURI:  "ftp://ftp.radb.net/radb/dbase/RADB.CURRENTSERIAL",
 				TelnetHost: "whois.radb.net",
 				TelnetPort: 43,
 			},
@@ -42,13 +42,6 @@ func DefaultConfig() *Config {
 				DumpURI:    "https://ftp.ripe.net/ripe/dbase/ripe.db.gz",
 				SerialURI:  "https://ftp.ripe.net/ripe/dbase/RIPE.CURRENTSERIAL",
 				TelnetHost: "nrtm.db.ripe.net",
-				TelnetPort: 4444,
-			},
-			"ARIN": {
-				Name:       "ARIN",
-				DumpURI:    "https://ftp.arin.net/pub/rr/arin.db",
-				SerialURI:  "https://ftp.arin.net/pub/rr/ARIN.CURRENTSERIAL",
-				TelnetHost: "rr.arin.net",
 				TelnetPort: 4444,
 			},
 		},
