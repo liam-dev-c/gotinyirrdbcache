@@ -2,3 +2,6 @@
 _reference/
 data/
 *.cache
+/bin/
+/serve
+/update

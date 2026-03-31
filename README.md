@@ -6,10 +6,10 @@ Fetches and caches IRRD data from multiple upstream WHOIS sources, providing a J
 
 ## Architecture
 
-Two-process design:
+Single binary that runs both the HTTP server and the background update loop concurrently:
 
-- **`cmd/update`** — Background daemon that synchronises caches via NRTM telnet streams and full dump downloads. Saves state to disk and notifies the web server to reload.
-- **`cmd/serve`** — HTTP server that loads cached state from disk and serves a JSON API.
+- The **update loop** synchronises caches via NRTM telnet streams and full dump downloads, saving state to disk.
+- The **HTTP server** serves a JSON API from the in-memory cache state.
 
 ## Supported Upstreams
 
@@ -18,21 +18,16 @@ RADB, RIPE, LEVEL3, ARIN, ALTDB (configurable via `config.json`)
 ## Build
 
 ```sh
-go build -o bin/serve ./cmd/serve
-go build -o bin/update ./cmd/update
+go build -o bin/gotinyirrdbcache ./cmd/serve
 ```
 
 ## Usage
 
 ```sh
-# Start the update daemon (fetches and maintains caches)
-./bin/update -config config.json
-
-# Start the HTTP server (serves cached data)
-./bin/serve -config config.json
+./bin/gotinyirrdbcache -config config.json
 ```
 
-If no config file exists at the given path, defaults are used.
+If no config file exists at the given path, defaults are used. The server starts on `0.0.0.0:8087` by default.
 
 ## Configuration
 

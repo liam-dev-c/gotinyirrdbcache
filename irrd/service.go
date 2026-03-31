@@ -3,7 +3,6 @@ package irrd
 import (
 	"fmt"
 	"log"
-	"net/http"
 	"time"
 )
 
@@ -109,21 +108,16 @@ type WhoisCacheService struct {
 	cfg    *Config
 }
 
-// NewWhoisCacheService creates a service that loads all caches from disk.
+// NewWhoisCacheService creates a service with caches for all configured upstreams.
+// Caches start empty; call StartUpdateLoop to populate them.
 func NewWhoisCacheService(cfg *Config) *WhoisCacheService {
 	svc := &WhoisCacheService{
 		Caches: make(map[string]*WhoisCache),
 		cfg:    cfg,
 	}
 	for _, up := range cfg.Upstreams {
-		cache := NewWhoisCache(up, cfg)
-		log.Printf("Loading cache: %s", cache.Config.Name)
-		if err := cache.Load(); err != nil {
-			log.Printf("Error loading cache %s: %v", cache.Config.Name, err)
-		}
-		svc.Caches[up.Name] = cache
+		svc.Caches[up.Name] = NewWhoisCache(up, cfg)
 	}
-	log.Printf("Caches initialized")
 	return svc
 }
 
@@ -158,35 +152,17 @@ func (svc *WhoisCacheService) GetCacheState(name string) (CacheStateProvider, er
 	return cache.State, nil
 }
 
-// WhoisCacheUpdateService is the background daemon that keeps caches
-// up to date via telnet updates and dump downloads.
-type WhoisCacheUpdateService struct {
-	Caches map[string]*WhoisCache
-	cfg    *Config
-}
-
-// NewWhoisCacheUpdateService creates an update service for all configured upstreams.
-func NewWhoisCacheUpdateService(cfg *Config) *WhoisCacheUpdateService {
-	svc := &WhoisCacheUpdateService{
-		Caches: make(map[string]*WhoisCache),
-		cfg:    cfg,
-	}
-	for _, up := range cfg.Upstreams {
-		svc.Caches[up.Name] = NewWhoisCache(up, cfg)
-	}
-	return svc
-}
-
-// Start runs the initial update of all caches, then enters an infinite loop
-// updating each cache at the configured interval. The initial update is fatal
-// on error. Subsequent update errors are logged but not fatal.
-func (svc *WhoisCacheUpdateService) Start() error {
+// StartUpdateLoop runs the initial update of all caches in the service,
+// then enters an infinite loop updating each cache at the configured interval.
+// The initial update is fatal on error. Subsequent update errors are logged
+// but not fatal. This should be called in a goroutine.
+func (svc *WhoisCacheService) StartUpdateLoop() error {
 	// Initial update - errors are fatal
 	for _, cache := range svc.Caches {
+		log.Printf("Initial update: %s", cache.Config.Name)
 		if err := cache.Update(); err != nil {
 			return fmt.Errorf("initial update of %s failed: %w", cache.Config.Name, err)
 		}
-		svc.notifyWeb(cache.Config.Name)
 	}
 	log.Printf("Caches initialised")
 
@@ -197,54 +173,7 @@ func (svc *WhoisCacheUpdateService) Start() error {
 			log.Printf("Updating cache: %s", cache.Config.Name)
 			if err := cache.Update(); err != nil {
 				log.Printf("Error updating cache %s: %v", cache.Config.Name, err)
-				continue
 			}
-			svc.notifyWeb(cache.Config.Name)
 		}
 	}
-}
-
-// notifyWeb triggers the web service to reload a cache from disk.
-func (svc *WhoisCacheUpdateService) notifyWeb(name string) {
-	url := fmt.Sprintf("http://localhost:%s/cache/%s/update",
-		extractPort(svc.cfg.HTTPEndpoint), name)
-	log.Printf("Notifying web: %s", url)
-	// Best-effort HTTP GET - errors are logged but not fatal
-	resp, err := httpGet(url)
-	if err != nil {
-		log.Printf("Error notifying web for %s: %v", name, err)
-		return
-	}
-	if resp != 200 {
-		log.Printf("Web update for %s returned status %d", name, resp)
-	}
-}
-
-// extractPort extracts the port from a host:port string.
-func extractPort(endpoint string) string {
-	_, port, err := parseHostPort(endpoint)
-	if err != nil {
-		return "8087"
-	}
-	return port
-}
-
-// parseHostPort splits host:port. Minimal wrapper for clarity.
-func parseHostPort(hostport string) (string, string, error) {
-	for i := len(hostport) - 1; i >= 0; i-- {
-		if hostport[i] == ':' {
-			return hostport[:i], hostport[i+1:], nil
-		}
-	}
-	return "", "", fmt.Errorf("no colon in %q", hostport)
-}
-
-// httpGet performs a simple HTTP GET and returns the status code.
-func httpGet(targetURL string) (int, error) {
-	resp, err := http.Get(targetURL)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-	return resp.StatusCode, nil
 }
