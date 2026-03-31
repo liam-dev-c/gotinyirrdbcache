@@ -1,27 +1,28 @@
 package irrd
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
 
-func TestParseNRTMv4Snapshot(t *testing.T) {
-	// Simulated NRTMv4 snapshot with header + 3 records
-	data := "\x1e" + `{"nrtm_version":4,"type":"snapshot","source":"TEST","session_id":"s1","version":10}` + "\n" +
-		"\x1e" + `{"action":"add","object_text":"route: 192.0.2.0/24\norigin: AS65001\nsource: TEST\n"}` + "\n" +
-		"\x1e" + `{"action":"add","object_text":"route6: 2001:db8::/32\norigin: AS65002\nsource: TEST\n"}` + "\n" +
-		"\x1e" + `{"action":"add","object_text":"as-set: AS-EXAMPLE\nmembers: AS65001, AS65002\nsource: TEST\n"}` + "\n"
+func TestParseNRTMv4Snapshot_FromFile(t *testing.T) {
+	f, err := os.Open("testdata/nrtmv4.snapshot.sample")
+	if err != nil {
+		t.Fatalf("opening sample: %v", err)
+	}
+	defer f.Close()
 
-	records, err := ParseNRTMv4Snapshot(strings.NewReader(data))
+	records, err := ParseNRTMv4Snapshot(f)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	// mntner is Unrecognised and skipped; expect route, route6, as-set
 	if len(records) != 3 {
 		t.Fatalf("got %d records, want 3", len(records))
 	}
 
-	// Check route
 	route, ok := records[0].(Route)
 	if !ok {
 		t.Fatalf("record 0: expected Route, got %T", records[0])
@@ -33,7 +34,6 @@ func TestParseNRTMv4Snapshot(t *testing.T) {
 		t.Errorf("route origin = %q, want AS65001", route.Origin)
 	}
 
-	// Check route6
 	route6, ok := records[1].(Route6)
 	if !ok {
 		t.Fatalf("record 1: expected Route6, got %T", records[1])
@@ -42,7 +42,6 @@ func TestParseNRTMv4Snapshot(t *testing.T) {
 		t.Errorf("route6 prefix = %q, want 2001:db8::/32", route6.Prefix)
 	}
 
-	// Check macro
 	macro, ok := records[2].(Macro)
 	if !ok {
 		t.Fatalf("record 2: expected Macro, got %T", records[2])
@@ -55,28 +54,14 @@ func TestParseNRTMv4Snapshot(t *testing.T) {
 	}
 }
 
-func TestParseNRTMv4Snapshot_SkipsUnrecognised(t *testing.T) {
-	data := "\x1e" + `{"nrtm_version":4,"type":"snapshot","source":"TEST","session_id":"s1","version":10}` + "\n" +
-		"\x1e" + `{"action":"add","object_text":"mntner: EXAMPLE-MNT\nsource: TEST\n"}` + "\n" +
-		"\x1e" + `{"action":"add","object_text":"route: 10.0.0.0/8\norigin: AS1\nsource: TEST\n"}` + "\n"
-
-	records, err := ParseNRTMv4Snapshot(strings.NewReader(data))
+func TestParseNRTMv4Delta_FromFile(t *testing.T) {
+	f, err := os.Open("testdata/nrtmv4.delta.sample")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("opening sample: %v", err)
 	}
+	defer f.Close()
 
-	// mntner parses as Unrecognised and is skipped, only route is kept
-	if len(records) != 1 {
-		t.Fatalf("got %d records, want 1", len(records))
-	}
-}
-
-func TestParseNRTMv4Delta(t *testing.T) {
-	data := "\x1e" + `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":11}` + "\n" +
-		"\x1e" + `{"action":"add_modify","object_text":"route: 198.51.100.0/24\norigin: AS65003\nsource: TEST\n"}` + "\n" +
-		"\x1e" + `{"action":"delete","object_text":"route: 192.0.2.0/24\norigin: AS65001\nsource: TEST\n"}` + "\n"
-
-	updates, err := ParseNRTMv4Delta(strings.NewReader(data))
+	updates, err := ParseNRTMv4Delta(f)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -101,9 +86,40 @@ func TestParseNRTMv4Delta(t *testing.T) {
 	}
 }
 
+// TestParseNRTMv4Snapshot_ObjectTextField verifies "object_text" (RFC draft) field also works.
+func TestParseNRTMv4Snapshot_ObjectTextField(t *testing.T) {
+	data := `{"nrtm_version":4,"type":"snapshot","source":"TEST","session_id":"s1","version":10}` + "\n" +
+		`{"object_text":"route: 10.0.0.0/8\norigin: AS1\nsource: TEST\n"}` + "\n"
+
+	records, err := ParseNRTMv4Snapshot(strings.NewReader(data))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("got %d records, want 1", len(records))
+	}
+	if _, ok := records[0].(Route); !ok {
+		t.Fatalf("expected Route, got %T", records[0])
+	}
+}
+
+// TestParseNRTMv4Snapshot_RFC7464 verifies 0x1E record separator is handled.
+func TestParseNRTMv4Snapshot_RFC7464(t *testing.T) {
+	data := "\x1e" + `{"nrtm_version":4,"type":"snapshot","source":"TEST","session_id":"s1","version":10}` + "\n" +
+		"\x1e" + `{"object_text":"route: 10.0.0.0/8\norigin: AS1\nsource: TEST\n"}` + "\n"
+
+	records, err := ParseNRTMv4Snapshot(strings.NewReader(data))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("got %d records, want 1", len(records))
+	}
+}
+
 func TestParseNRTMv4Delta_InvalidAction(t *testing.T) {
-	data := "\x1e" + `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":11}` + "\n" +
-		"\x1e" + `{"action":"unknown","object_text":"route: 10.0.0.0/8\norigin: AS1\n"}` + "\n"
+	data := `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":11}` + "\n" +
+		`{"action":"unknown","object":"route: 10.0.0.0/8\norigin: AS1\n"}` + "\n"
 
 	_, err := ParseNRTMv4Delta(strings.NewReader(data))
 	if err == nil {

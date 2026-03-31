@@ -27,7 +27,17 @@ type DeltaRef struct {
 }
 
 // NRTMv4Record represents a single record in an NRTMv4 snapshot or delta file.
+// The RPSL text may appear as "object" (RIPE implementation) or "object_text" (RFC draft).
 type NRTMv4Record struct {
 	Action     string `json:"action"`      // "add" (snapshot), "add_modify" or "delete" (delta)
-	ObjectText string `json:"object_text"` // RPSL object as text
+	Object     string `json:"object"`      // RPSL object as text (RIPE format)
+	ObjectText string `json:"object_text"` // RPSL object as text (RFC draft format)
+}
+
+// RPSLText returns the RPSL object text from whichever field is populated.
+func (r NRTMv4Record) RPSLText() string {
+	if r.Object != "" {
+		return r.Object
+	}
+	return r.ObjectText
 }

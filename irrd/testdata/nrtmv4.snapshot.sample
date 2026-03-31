@@ -1,0 +1,5 @@
+{"nrtm_version":4,"type":"snapshot","source":"RIPE","session_id":"db44e038-1f07-4d54-a307-1b32339f141a","version":734256}
+{"object":"route: 192.0.2.0/24\norigin: AS65001\nsource: RIPE\n"}
+{"object":"route6: 2001:db8::/32\norigin: AS65002\nsource: RIPE\n"}
+{"object":"as-set: AS-EXAMPLE\nmembers: AS65001, AS65002\nsource: RIPE\n"}
+{"object":"mntner: EXAMPLE-MNT\nauth: MD5-PW\nsource: RIPE\n"}

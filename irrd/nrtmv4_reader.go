@@ -43,7 +43,7 @@ func ParseNRTMv4Snapshot(r io.Reader) ([]Record, error) {
 			return nil, fmt.Errorf("parsing NRTMv4 snapshot record: %w", err)
 		}
 
-		parsed, err := parseRPSLText(rec.ObjectText)
+		parsed, err := parseRPSLText(rec.RPSLText())
 		if err != nil {
 			skipped++
 			continue // skip unparseable records
@@ -97,7 +97,7 @@ func ParseNRTMv4Delta(r io.Reader) ([]Update, error) {
 			return nil, err
 		}
 
-		parsed, err := parseRPSLText(rec.ObjectText)
+		parsed, err := parseRPSLText(rec.RPSLText())
 		if err != nil {
 			continue // skip unparseable records
 		}
