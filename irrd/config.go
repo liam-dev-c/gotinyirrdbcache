@@ -38,7 +38,36 @@ func DefaultConfig() *Config {
 		CacheDataDirectory:  "data",
 		WhoisUpdateInterval: 60,
 		HTTPEndpoint:        "0.0.0.0:8087",
-		NRTMv3Upstreams: map[string]NRTMv3Config{},
+		NRTMv3Upstreams: map[string]NRTMv3Config{
+			"RADB": {
+				Name:      "RADB",
+				DumpURI:   "ftp://ftp.radb.net/radb/dbase/radb.db.gz",
+				SerialURI: "ftp://ftp.radb.net/radb/dbase/RADB.CURRENTSERIAL",
+				Host:      "whois.radb.net",
+				Port:      43,
+			},
+			"LEVEL3": {
+				Name:      "LEVEL3",
+				DumpURI:   "ftp://rr.level3.net/pub/rr/level3.db.gz",
+				SerialURI: "ftp://rr.level3.net/pub/rr/LEVEL3.CURRENTSERIAL",
+				Host:      "rr.Level3.net",
+				Port:      43,
+			},
+			"ARIN": {
+				Name:      "ARIN",
+				DumpURI:   "https://ftp.arin.net/pub/rr/arin.db.gz",
+				SerialURI: "https://ftp.arin.net/pub/rr/ARIN.CURRENTSERIAL",
+				Host:      "rr.arin.net",
+				Port:      4444,
+			},
+			"ALTDB": {
+				Name:      "ALTDB",
+				DumpURI:   "ftp://ftp.altdb.net/pub/altdb/altdb.db.gz",
+				SerialURI: "ftp://ftp.altdb.net/pub/altdb/ALTDB.CURRENTSERIAL",
+				Host:      "whois.altdb.net",
+				Port:      43,
+			},
+		},
 		NRTMv4Upstreams: map[string]NRTMv4Config{
 			"RIPE": {
 				Name:            "RIPE",

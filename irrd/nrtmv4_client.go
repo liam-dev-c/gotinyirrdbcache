@@ -100,10 +100,13 @@ func (c *WhoisCache) applyNRTMv4Snapshot(nf *NotificationFile) error {
 		snapshotFilename = fmt.Sprintf("nrtmv4_snapshot_%d.json", nf.Snapshot.Version)
 	}
 	snapshotPath := filepath.Join(dumpDir, snapshotFilename)
-	log.Printf("NRTMv4: downloading snapshot version %d to %s", nf.Snapshot.Version, snapshotPath)
-
-	if err := downloadAndVerifyHashToFile(nf.Snapshot.URL, nf.Snapshot.Hash, snapshotPath); err != nil {
-		return fmt.Errorf("NRTMv4 snapshot: %w", err)
+	if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
+		log.Printf("NRTMv4: downloading snapshot version %d to %s", nf.Snapshot.Version, snapshotPath)
+		if err := downloadAndVerifyHashToFile(nf.Snapshot.URL, nf.Snapshot.Hash, snapshotPath); err != nil {
+			return fmt.Errorf("NRTMv4 snapshot: %w", err)
+		}
+	} else {
+		log.Printf("NRTMv4: Using cached version snapshot version %d to %s", nf.Snapshot.Version, snapshotPath)
 	}
 
 	// Parse from disk
