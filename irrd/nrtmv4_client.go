@@ -12,6 +12,8 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -85,17 +87,43 @@ func (c *WhoisCache) updateNRTMv4() error {
 	return c.applyNRTMv4Deltas(nf)
 }
 
-// applyNRTMv4Snapshot downloads and applies a full NRTMv4 snapshot.
+// applyNRTMv4Snapshot downloads a snapshot to disk, then parses and applies it.
 func (c *WhoisCache) applyNRTMv4Snapshot(nf *NotificationFile) error {
-	log.Printf("NRTMv4: downloading snapshot version %d from %s", nf.Snapshot.Version, nf.Snapshot.URL)
+	dumpDir := c.cfg.DumpDir(c.Name)
+	if err := os.MkdirAll(dumpDir, 0o755); err != nil {
+		return fmt.Errorf("NRTMv4 snapshot: %w", err)
+	}
 
-	body, err := downloadAndVerifyHash(nf.Snapshot.URL, nf.Snapshot.Hash)
+	// Download snapshot to disk, preserving the original filename
+	snapshotFilename := filepath.Base(nf.Snapshot.URL)
+	if snapshotFilename == "" || snapshotFilename == "." || snapshotFilename == "/" {
+		snapshotFilename = fmt.Sprintf("nrtmv4_snapshot_%d.json", nf.Snapshot.Version)
+	}
+	snapshotPath := filepath.Join(dumpDir, snapshotFilename)
+	log.Printf("NRTMv4: downloading snapshot version %d to %s", nf.Snapshot.Version, snapshotPath)
+
+	if err := downloadAndVerifyHashToFile(nf.Snapshot.URL, nf.Snapshot.Hash, snapshotPath); err != nil {
+		return fmt.Errorf("NRTMv4 snapshot: %w", err)
+	}
+
+	// Parse from disk
+	f, err := os.Open(snapshotPath)
 	if err != nil {
 		return fmt.Errorf("NRTMv4 snapshot: %w", err)
 	}
-	defer body.Close()
+	defer f.Close()
 
-	records, err := ParseNRTMv4Snapshot(body)
+	var reader io.Reader = f
+	if strings.HasSuffix(snapshotPath, ".gz") {
+		gr, err := gzip.NewReader(f)
+		if err != nil {
+			return fmt.Errorf("NRTMv4 snapshot: decompressing: %w", err)
+		}
+		defer gr.Close()
+		reader = gr
+	}
+
+	records, err := ParseNRTMv4Snapshot(reader)
 	if err != nil {
 		return fmt.Errorf("NRTMv4 snapshot: %w", err)
 	}
@@ -240,6 +268,53 @@ func downloadAndVerifyHash(url, expectedHash string) (io.ReadCloser, error) {
 	}
 
 	return io.NopCloser(reader), nil
+}
+
+// downloadAndVerifyHashToFile downloads a URL to a file, verifying the SHA-256 hash.
+// The hash is verified on the raw downloaded bytes (before any decompression).
+func downloadAndVerifyHashToFile(uri, expectedHash, dest string) error {
+	resp, err := httpGet(uri)
+	if err != nil {
+		return fmt.Errorf("downloading %s: %w", uri, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("downloading %s: HTTP %d", uri, resp.StatusCode)
+	}
+
+	tmp := dest + ".part"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+
+	h := sha256.New()
+	w := io.MultiWriter(f, h)
+
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("writing %s: %w", tmp, err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+
+	if expectedHash != "" {
+		actual := hex.EncodeToString(h.Sum(nil))
+		if !strings.EqualFold(actual, expectedHash) {
+			os.Remove(tmp)
+			return &HashMismatchError{
+				URL:      uri,
+				Expected: expectedHash,
+				Actual:   actual,
+			}
+		}
+	}
+
+	return os.Rename(tmp, dest)
 }
 
 // resolveNRTMv4URLs resolves relative URLs in the notification file against the base URL.

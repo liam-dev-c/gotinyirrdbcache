@@ -65,9 +65,9 @@ func TestParseNRTMv4Snapshot_SkipsUnrecognised(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// mntner parses as Unrecognised which is still returned
-	if len(records) != 2 {
-		t.Fatalf("got %d records, want 2", len(records))
+	// mntner parses as Unrecognised and is skipped, only route is kept
+	if len(records) != 1 {
+		t.Fatalf("got %d records, want 1", len(records))
 	}
 }
 

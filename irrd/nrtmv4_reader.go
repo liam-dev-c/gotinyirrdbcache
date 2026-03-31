@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 )
 
@@ -17,6 +18,8 @@ func ParseNRTMv4Snapshot(r io.Reader) ([]Record, error) {
 
 	var records []Record
 	first := true
+	total := 0
+	skipped := 0
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -33,6 +36,8 @@ func ParseNRTMv4Snapshot(r io.Reader) ([]Record, error) {
 			continue
 		}
 
+		total++
+
 		var rec NRTMv4Record
 		if err := json.Unmarshal([]byte(line), &rec); err != nil {
 			return nil, fmt.Errorf("parsing NRTMv4 snapshot record: %w", err)
@@ -40,10 +45,17 @@ func ParseNRTMv4Snapshot(r io.Reader) ([]Record, error) {
 
 		parsed, err := parseRPSLText(rec.ObjectText)
 		if err != nil {
+			skipped++
 			continue // skip unparseable records
+		}
+		if _, ok := parsed.(Unrecognised); ok {
+			skipped++
+			continue
 		}
 		records = append(records, parsed)
 	}
+
+	log.Printf("NRTMv4: snapshot parsed %d records, kept %d, skipped %d", total, len(records), skipped)
 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("reading NRTMv4 snapshot: %w", err)
