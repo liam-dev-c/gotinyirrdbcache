@@ -2,7 +2,9 @@ package irrd
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"log"
@@ -35,12 +37,20 @@ func (c *WhoisCache) updateNRTMv4() error {
 		return fmt.Errorf("NRTMv4: reading notification file: %w", err)
 	}
 
-	// Verify JWS signature
-	if c.NRTMv4.PublicKey == "" {
+	// Resolve public key: inline takes priority, then fetch from URI
+	pubKeyB64 := c.NRTMv4.PublicKey
+	if pubKeyB64 == "" && c.NRTMv4.PublicKeyURI != "" {
+		fetched, err := fetchPublicKey(c.NRTMv4.PublicKeyURI)
+		if err != nil {
+			return fmt.Errorf("NRTMv4: fetching public key: %w", err)
+		}
+		pubKeyB64 = fetched
+	}
+	if pubKeyB64 == "" {
 		log.Printf("NRTMv4: no public key configured, skipping signature verification")
 	}
 
-	payload, err := VerifyNotificationFile(strings.TrimSpace(string(jwsData)), c.NRTMv4.PublicKey)
+	payload, err := VerifyNotificationFile(strings.TrimSpace(string(jwsData)), pubKeyB64)
 	if err != nil {
 		return fmt.Errorf("NRTMv4: %w", err)
 	}
@@ -230,4 +240,31 @@ func resolveURL(base *url.URL, ref string) string {
 		return ref
 	}
 	return base.ResolveReference(parsed).String()
+}
+
+// fetchPublicKey fetches a PEM-encoded public key from a URL and returns
+// its DER content as base64 (suitable for passing to VerifyNotificationFile).
+func fetchPublicKey(uri string) (string, error) {
+	log.Printf("NRTMv4: fetching public key from %s", uri)
+	resp, err := http.Get(uri)
+	if err != nil {
+		return "", fmt.Errorf("fetching %s: %w", uri, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("fetching %s: HTTP %d", uri, resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("reading %s: %w", uri, err)
+	}
+
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return "", fmt.Errorf("no PEM block found in %s", uri)
+	}
+
+	return base64.StdEncoding.EncodeToString(block.Bytes), nil
 }

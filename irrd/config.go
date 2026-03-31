@@ -18,8 +18,9 @@ type NRTMv3Config struct {
 // NRTMv4Config holds settings for an NRTMv4 upstream source.
 type NRTMv4Config struct {
 	Name            string `json:"name"`
-	NotificationURI string `json:"notification_uri"`     // Update Notification File URL
-	PublicKey       string `json:"public_key,omitempty"` // Ed25519 or ES256 public key, base64-encoded
+	NotificationURI string `json:"notification_uri"`         // Update Notification File URL
+	PublicKey       string `json:"public_key,omitempty"`     // Ed25519 or ES256 public key, base64-encoded (inline)
+	PublicKeyURI    string `json:"public_key_uri,omitempty"` // URL to fetch PEM-encoded public key
 }
 
 // Config holds all application settings.
@@ -71,6 +72,7 @@ func DefaultConfig() *Config {
 			"RIPE": {
 				Name:            "RIPE",
 				NotificationURI: "https://nrtm.db.ripe.net/nrtmv4/RIPE/update-notification-file.jose",
+				PublicKeyURI:    "https://ftp.ripe.net/ripe/dbase/nrtmv4/nrtmv4_public_key.txt",
 			},
 		},
 	}
