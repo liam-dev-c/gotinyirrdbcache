@@ -18,10 +18,22 @@ import (
 	"github.com/jlaffaye/ftp"
 )
 
+const userAgent = "gotinyirrdbcache"
+
 var (
 	ErrCacheNotReady = errors.New("cache not ready")
 	ErrCacheError    = errors.New("cache error")
 )
+
+// httpGet performs an HTTP GET with the application User-Agent header.
+func httpGet(url string) (*http.Response, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", userAgent)
+	return http.DefaultClient.Do(req)
+}
 
 // WhoisCache manages a single upstream IRRD cache, including persistence,
 // synchronisation via NRTMv3 or NRTMv4 updates, and full dump downloads.
@@ -309,7 +321,7 @@ func downloadFile(dest, uri string) error {
 
 	switch parsed.Scheme {
 	case "http", "https":
-		resp, err := http.Get(uri)
+		resp, err := httpGet(uri)
 		if err != nil {
 			return fmt.Errorf("HTTP GET %s: %w", uri, err)
 		}

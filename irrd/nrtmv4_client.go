@@ -24,7 +24,7 @@ import (
 func (c *WhoisCache) updateNRTMv4() error {
 	// Fetch notification file
 	log.Printf("NRTMv4: fetching notification file from %s", c.NRTMv4.NotificationURI)
-	resp, err := http.Get(c.NRTMv4.NotificationURI)
+	resp, err := httpGet(c.NRTMv4.NotificationURI)
 	if err != nil {
 		return fmt.Errorf("NRTMv4: fetching notification file: %w", err)
 	}
@@ -195,7 +195,7 @@ func (c *WhoisCache) applyDeltasFrom(nf *NotificationFile, fromVersion int) erro
 // downloadAndVerifyHash downloads a URL and verifies the SHA-256 hash of its content.
 // Returns a ReadCloser that yields the verified content.
 func downloadAndVerifyHash(url, expectedHash string) (io.ReadCloser, error) {
-	resp, err := http.Get(url)
+	resp, err := httpGet(url)
 	if err != nil {
 		return nil, fmt.Errorf("downloading %s: %w", url, err)
 	}
@@ -263,7 +263,7 @@ func resolveURL(base *url.URL, ref string) string {
 // its DER content as base64 (suitable for passing to VerifyNotificationFile).
 func fetchPublicKey(uri string) (string, error) {
 	log.Printf("NRTMv4: fetching public key from %s", uri)
-	resp, err := http.Get(uri)
+	resp, err := httpGet(uri)
 	if err != nil {
 		return "", fmt.Errorf("fetching %s: %w", uri, err)
 	}
