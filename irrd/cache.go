@@ -8,9 +8,9 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -265,15 +265,34 @@ func (c *WhoisCache) downloadDump() (serial string, dumpPath string, err error) 
 	return newSerial, dumpPath, nil
 }
 
-// downloadFile downloads a file from a URI using curl.
+// downloadFile downloads a file from a URI using net/http.
 func downloadFile(dest, uri string) error {
 	_ = os.Remove(dest)
 	tmp := dest + ".part"
-	cmd := exec.Command("curl", "-s", "-o", tmp, uri)
-	log.Printf("+ %s", strings.Join(cmd.Args, " "))
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("curl failed: %w", err)
+
+	log.Printf("Downloading %s", uri)
+	resp, err := http.Get(uri)
+	if err != nil {
+		return fmt.Errorf("HTTP GET %s: %w", uri, err)
 	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP GET %s: status %d", uri, resp.StatusCode)
+	}
+
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		f.Close()
+		return fmt.Errorf("writing %s: %w", tmp, err)
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+
 	return os.Rename(tmp, dest)
 }
 
