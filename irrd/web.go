@@ -3,11 +3,52 @@ package irrd
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+var (
+	cacheReady = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "irrd_cache_ready",
+		Help: "Whether a cache is ready (1) or not (0).",
+	}, []string{"cache"})
+
+	cacheSerial = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "irrd_cache_serial",
+		Help: "Current serial number of a cache.",
+	}, []string{"cache"})
+
+	cacheMacroCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "irrd_cache_macros_total",
+		Help: "Number of macros in a cache.",
+	}, []string{"cache"})
+
+	cachePrefix4Count = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "irrd_cache_prefix4_origins_total",
+		Help: "Number of origin ASNs with IPv4 prefixes in a cache.",
+	}, []string{"cache"})
+
+	cachePrefix6Count = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "irrd_cache_prefix6_origins_total",
+		Help: "Number of origin ASNs with IPv6 prefixes in a cache.",
+	}, []string{"cache"})
+
+	httpRequestsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "irrd_http_requests_total",
+		Help: "Total HTTP requests by method and path.",
+	}, []string{"method", "path", "status"})
+)
+
+func init() {
+	prometheus.MustRegister(cacheReady, cacheSerial, cacheMacroCount,
+		cachePrefix4Count, cachePrefix6Count, httpRequestsTotal)
+}
 
 // Server is the HTTP server for the IRRD cache API.
 type Server struct {
@@ -30,6 +71,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /", s.handleIndex)
+	s.mux.HandleFunc("GET /healthz", s.handleHealth)
+	s.mux.Handle("GET /metrics", promhttp.Handler())
 	s.mux.HandleFunc("GET /cache/{cache}/macros/lookup/{key}", s.withCache(s.handleLookupMacros))
 	s.mux.HandleFunc("GET /cache/{cache}/macros/list", s.withCache(s.handleListMacros))
 	s.mux.HandleFunc("GET /cache/{cache}/prefixes/4/lookup/{key}", s.withCache(s.handleLookupPrefix4))
@@ -81,6 +124,8 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		Doc  string
 	}{
 		{"/", "This page"},
+		{"/healthz", "Health check"},
+		{"/metrics", "Prometheus metrics"},
 		{"/cache/{cache}/macros/lookup/{key}", "Lookup macro by name"},
 		{"/cache/{cache}/macros/list", "List macro names"},
 		{"/cache/{cache}/prefixes/4/lookup/{key}", "Lookup ipv4 prefixes by ASN"},
@@ -199,6 +244,58 @@ func (s *Server) handleDump(w http.ResponseWriter, r *http.Request, cache CacheS
 		"prefix4": prefix4,
 		"prefix6": prefix6,
 	})
+}
+
+// handleHealth returns 200 if any cache is ready, 503 otherwise.
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	s.updateMetrics()
+
+	anyReady := false
+	statuses := make(map[string]string)
+	for name, cache := range s.Service.Caches {
+		if cache.Ready {
+			anyReady = true
+			statuses[name] = "ready"
+		} else {
+			statuses[name] = "not_ready"
+		}
+	}
+
+	status := http.StatusOK
+	if !anyReady {
+		status = http.StatusServiceUnavailable
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": status == http.StatusOK,
+		"caches": statuses,
+	})
+}
+
+// updateMetrics refreshes Prometheus gauges from current cache state.
+func (s *Server) updateMetrics() {
+	for name, cache := range s.Service.Caches {
+		if cache.Ready {
+			cacheReady.WithLabelValues(name).Set(1)
+			cacheMacroCount.WithLabelValues(name).Set(float64(len(cache.State.Macros)))
+			cachePrefix4Count.WithLabelValues(name).Set(float64(len(cache.State.Prefix4)))
+			cachePrefix6Count.WithLabelValues(name).Set(float64(len(cache.State.Prefix6)))
+			if serial, err := parseFloat(cache.State.Serial); err == nil {
+				cacheSerial.WithLabelValues(name).Set(serial)
+			}
+		} else {
+			cacheReady.WithLabelValues(name).Set(0)
+		}
+	}
+}
+
+// parseFloat is a helper to convert serial strings to float64 for Prometheus.
+func parseFloat(s string) (float64, error) {
+	var f float64
+	_, err := fmt.Sscanf(s, "%f", &f)
+	return f, err
 }
 
 func writeJSON200(w http.ResponseWriter, data interface{}) {
