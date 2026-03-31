@@ -29,3 +29,31 @@ type ParseFailure struct {
 }
 
 func (e *ParseFailure) Error() string { return e.Message }
+
+// SessionResetError indicates the NRTMv4 session has changed, requiring a fresh snapshot.
+type SessionResetError struct {
+	OldSession string
+	NewSession string
+}
+
+func (e *SessionResetError) Error() string {
+	return "NRTMv4 session reset: " + e.OldSession + " -> " + e.NewSession
+}
+
+// HashMismatchError indicates a downloaded file's SHA-256 hash doesn't match expected.
+type HashMismatchError struct {
+	URL      string
+	Expected string
+	Actual   string
+}
+
+func (e *HashMismatchError) Error() string {
+	return "hash mismatch for " + e.URL + ": expected " + e.Expected + ", got " + e.Actual
+}
+
+// SignatureError indicates JWS signature verification failed.
+type SignatureError struct {
+	Message string
+}
+
+func (e *SignatureError) Error() string { return e.Message }

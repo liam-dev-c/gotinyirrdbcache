@@ -46,6 +46,10 @@ type WhoisCacheState struct {
 	Prefix4   map[string]StringSet
 	Prefix6   map[string]StringSet
 	UpdatedAt time.Time
+
+	// NRTMv4 session tracking
+	NRTMv4SessionID string
+	NRTMv4Version   int
 }
 
 // NewWhoisCacheState creates an empty cache state.

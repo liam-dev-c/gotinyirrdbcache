@@ -115,8 +115,11 @@ func NewWhoisCacheService(cfg *Config) *WhoisCacheService {
 		Caches: make(map[string]*WhoisCache),
 		cfg:    cfg,
 	}
-	for _, up := range cfg.Upstreams {
-		svc.Caches[up.Name] = NewWhoisCache(up, cfg)
+	for _, up := range cfg.NRTMv3Upstreams {
+		svc.Caches[up.Name] = NewNRTMv3Cache(up, cfg)
+	}
+	for _, up := range cfg.NRTMv4Upstreams {
+		svc.Caches[up.Name] = NewNRTMv4Cache(up, cfg)
 	}
 	return svc
 }
@@ -159,9 +162,9 @@ func (svc *WhoisCacheService) GetCacheState(name string) (CacheStateProvider, er
 func (svc *WhoisCacheService) StartUpdateLoop() {
 	// Initial update
 	for _, cache := range svc.Caches {
-		log.Printf("Initial update: %s", cache.Config.Name)
+		log.Printf("Initial update: %s", cache.Name)
 		if err := cache.Update(); err != nil {
-			log.Printf("Error in initial update of %s: %v", cache.Config.Name, err)
+			log.Printf("Error in initial update of %s: %v", cache.Name, err)
 		}
 	}
 	log.Printf("Initial update pass complete")
@@ -170,9 +173,9 @@ func (svc *WhoisCacheService) StartUpdateLoop() {
 	for {
 		time.Sleep(time.Duration(svc.cfg.WhoisUpdateInterval) * time.Second)
 		for _, cache := range svc.Caches {
-			log.Printf("Updating cache: %s", cache.Config.Name)
+			log.Printf("Updating cache: %s", cache.Name)
 			if err := cache.Update(); err != nil {
-				log.Printf("Error updating cache %s: %v", cache.Config.Name, err)
+				log.Printf("Error updating cache %s: %v", cache.Name, err)
 			}
 		}
 	}

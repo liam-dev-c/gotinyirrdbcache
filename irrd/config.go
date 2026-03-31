@@ -6,13 +6,20 @@ import (
 	"path/filepath"
 )
 
-// UpstreamConfig defines a single IRRD upstream source.
-type UpstreamConfig struct {
-	Name       string `json:"name"`
-	DumpURI    string `json:"dump_uri"`
-	SerialURI  string `json:"serial_uri"`
-	TelnetHost string `json:"telnet_host"`
-	TelnetPort int    `json:"telnet_port"`
+// NRTMv3Config holds settings for an NRTMv3 upstream source.
+type NRTMv3Config struct {
+	Name      string `json:"name"`
+	DumpURI   string `json:"dump_uri"`
+	SerialURI string `json:"serial_uri"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+}
+
+// NRTMv4Config holds settings for an NRTMv4 upstream source.
+type NRTMv4Config struct {
+	Name            string `json:"name"`
+	NotificationURI string `json:"notification_uri"`     // Update Notification File URL
+	PublicKey        string `json:"public_key,omitempty"` // Ed25519 or ES256 public key, base64-encoded
 }
 
 // Config holds all application settings.
@@ -20,7 +27,8 @@ type Config struct {
 	CacheDataDirectory  string                    `json:"cache_data_directory"`
 	WhoisUpdateInterval int                       `json:"whois_update_interval"` // seconds
 	HTTPEndpoint        string                    `json:"http_endpoint"`
-	Upstreams           map[string]UpstreamConfig `json:"upstreams"`
+	NRTMv3Upstreams     map[string]NRTMv3Config   `json:"nrtmv3_upstreams"`
+	NRTMv4Upstreams     map[string]NRTMv4Config   `json:"nrtmv4_upstreams"`
 }
 
 // DefaultConfig returns the default configuration with standard IRRD upstreams.
@@ -29,20 +37,40 @@ func DefaultConfig() *Config {
 		CacheDataDirectory:  "data",
 		WhoisUpdateInterval: 60,
 		HTTPEndpoint:        "0.0.0.0:8087",
-		Upstreams: map[string]UpstreamConfig{
+		NRTMv3Upstreams: map[string]NRTMv3Config{
 			"RADB": {
-				Name:       "RADB",
-				DumpURI:    "ftp://ftp.radb.net/radb/dbase/radb.db.gz",
-				SerialURI:  "ftp://ftp.radb.net/radb/dbase/RADB.CURRENTSERIAL",
-				TelnetHost: "whois.radb.net",
-				TelnetPort: 43,
+				Name:      "RADB",
+				DumpURI:   "ftp://ftp.radb.net/radb/dbase/radb.db.gz",
+				SerialURI: "ftp://ftp.radb.net/radb/dbase/RADB.CURRENTSERIAL",
+				Host:      "whois.radb.net",
+				Port:      43,
 			},
+			"LEVEL3": {
+				Name:      "LEVEL3",
+				DumpURI:   "ftp://rr.level3.net/pub/rr/level3.db.gz",
+				SerialURI: "ftp://rr.level3.net/pub/rr/LEVEL3.CURRENTSERIAL",
+				Host:      "rr.Level3.net",
+				Port:      43,
+			},
+			"ARIN": {
+				Name:      "ARIN",
+				DumpURI:   "ftp://ftp.arin.net/pub/rr/arin.db",
+				SerialURI: "ftp://ftp.arin.net/pub/rr/ARIN.CURRENTSERIAL",
+				Host:      "rr.arin.net",
+				Port:      4444,
+			},
+			"ALTDB": {
+				Name:      "ALTDB",
+				DumpURI:   "ftp://ftp.altdb.net/pub/altdb/altdb.db.gz",
+				SerialURI: "ftp://ftp.altdb.net/pub/altdb/ALTDB.CURRENTSERIAL",
+				Host:      "whois.altdb.net",
+				Port:      43,
+			},
+		},
+		NRTMv4Upstreams: map[string]NRTMv4Config{
 			"RIPE": {
-				Name:       "RIPE",
-				DumpURI:    "https://ftp.ripe.net/ripe/dbase/ripe.db.gz",
-				SerialURI:  "https://ftp.ripe.net/ripe/dbase/RIPE.CURRENTSERIAL",
-				TelnetHost: "nrtm.db.ripe.net",
-				TelnetPort: 4444,
+				Name:            "RIPE",
+				NotificationURI: "https://nrtm.db.ripe.net/nrtmv4/RIPE/update-notification-file.jose",
 			},
 		},
 	}

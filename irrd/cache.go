@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/jlaffaye/ftp"
 )
 
 var (
@@ -22,22 +24,35 @@ var (
 )
 
 // WhoisCache manages a single upstream IRRD cache, including persistence,
-// synchronisation via telnet updates, and full dump downloads.
+// synchronisation via NRTMv3 or NRTMv4 updates, and full dump downloads.
 type WhoisCache struct {
-	Config    UpstreamConfig
+	Name      string
+	NRTMv3    *NRTMv3Config // set for NRTMv3 upstreams
+	NRTMv4    *NRTMv4Config // set for NRTMv4 upstreams
 	State     *WhoisCacheState
 	Ready     bool
 	cachePath string
 	cfg       *Config
 }
 
-// NewWhoisCache creates a new cache manager for an upstream.
-func NewWhoisCache(upstream UpstreamConfig, cfg *Config) *WhoisCache {
+// NewNRTMv3Cache creates a new cache manager for an NRTMv3 upstream.
+func NewNRTMv3Cache(v3 NRTMv3Config, cfg *Config) *WhoisCache {
 	return &WhoisCache{
-		Config:    upstream,
+		Name:      v3.Name,
+		NRTMv3:    &v3,
 		State:     NewWhoisCacheState(),
-		Ready:     false,
-		cachePath: cfg.CachePath(upstream.Name),
+		cachePath: cfg.CachePath(v3.Name),
+		cfg:       cfg,
+	}
+}
+
+// NewNRTMv4Cache creates a new cache manager for an NRTMv4 upstream.
+func NewNRTMv4Cache(v4 NRTMv4Config, cfg *Config) *WhoisCache {
+	return &WhoisCache{
+		Name:      v4.Name,
+		NRTMv4:    &v4,
+		State:     NewWhoisCacheState(),
+		cachePath: cfg.CachePath(v4.Name),
 		cfg:       cfg,
 	}
 }
@@ -57,11 +72,9 @@ func (c *WhoisCache) Load() error {
 	return nil
 }
 
-// Update performs a full update cycle: restore from disk if needed, try telnet
-// incremental update, fall back to full dump download if out of sync.
+// Update performs a full update cycle: restore from disk if needed,
+// then use the appropriate protocol (NRTMv3 or NRTMv4).
 func (c *WhoisCache) Update() error {
-	inSync := false
-
 	// Try to restore from disk if we have no serial
 	if c.State.Serial == "" {
 		if _, err := os.Stat(c.cachePath); err == nil {
@@ -74,9 +87,30 @@ func (c *WhoisCache) Update() error {
 		}
 	}
 
-	// If we have a serial, try incremental telnet update
+	if c.NRTMv4 != nil {
+		return c.updateViaV4()
+	}
+	return c.updateViaV3()
+}
+
+// updateViaV4 handles the NRTMv4 update path (snapshots + deltas).
+func (c *WhoisCache) updateViaV4() error {
+	err := c.updateNRTMv4()
+	if err != nil {
+		return fmt.Errorf("NRTMv4 update failed: %w", err)
+	}
+	c.Ready = true
+	log.Printf("Loaded state@%s", c.State.Serial)
+	return nil
+}
+
+// updateViaV3 handles the NRTMv3 update path (incremental + dump fallback).
+func (c *WhoisCache) updateViaV3() error {
+	inSync := false
+
+	// If we have a serial, try incremental NRTMv3 update
 	if c.State.Serial != "" {
-		err := c.updateTelnet()
+		err := c.updateNRTMv3()
 		if err == nil {
 			inSync = true
 			c.Ready = true
@@ -88,8 +122,6 @@ func (c *WhoisCache) Update() error {
 			switch {
 			case errors.As(err, &oose):
 				log.Printf("Near realtime updates out of sync. Downloading dump.")
-				inSync = false
-				c.Ready = false
 			case errors.As(err, &sre):
 				serial, _ := strconv.Atoi(c.State.Serial)
 				if serial == sre.Last {
@@ -98,8 +130,6 @@ func (c *WhoisCache) Update() error {
 					c.Ready = true
 				} else {
 					log.Printf("Near realtime updates out of sync: %v", err)
-					inSync = false
-					c.Ready = false
 				}
 			case errors.As(err, &er):
 				log.Printf("Error in realtime update: %v", err)
@@ -133,9 +163,9 @@ func (c *WhoisCache) Save() error {
 	return os.Rename(tmpPath, c.cachePath)
 }
 
-// updateTelnet fetches incremental updates from the upstream IRRD telnet service.
-func (c *WhoisCache) updateTelnet() error {
-	addr := fmt.Sprintf("%s:%d", c.Config.TelnetHost, c.Config.TelnetPort)
+// updateNRTMv3 fetches incremental updates from the upstream IRRD NRTMv3 service.
+func (c *WhoisCache) updateNRTMv3() error {
+	addr := fmt.Sprintf("%s:%d", c.NRTMv3.Host, c.NRTMv3.Port)
 	log.Printf("Connecting to %s", addr)
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -144,7 +174,7 @@ func (c *WhoisCache) updateTelnet() error {
 	defer conn.Close()
 
 	serial, _ := strconv.Atoi(c.State.Serial)
-	req := fmt.Sprintf("-g %s:3:%d-LAST\n", c.Config.Name, serial+1)
+	req := fmt.Sprintf("-g %s:3:%d-LAST\n", c.Name, serial+1)
 	log.Printf("Sending %s", strings.TrimSpace(req))
 	if _, err := fmt.Fprint(conn, req); err != nil {
 		return fmt.Errorf("sending request: %w", err)
@@ -219,16 +249,16 @@ func (c *WhoisCache) loadDump(state *WhoisCacheState, serial string, dumpPath st
 
 // downloadDump downloads the latest serial and dump file from the upstream.
 func (c *WhoisCache) downloadDump() (serial string, dumpPath string, err error) {
-	dumpDir := c.cfg.DumpDir(c.Config.Name)
+	dumpDir := c.cfg.DumpDir(c.Name)
 	if err := os.MkdirAll(dumpDir, 0o755); err != nil {
 		return "", "", err
 	}
 
-	serialURI, err := url.Parse(c.Config.SerialURI)
+	serialURI, err := url.Parse(c.NRTMv3.SerialURI)
 	if err != nil {
 		return "", "", err
 	}
-	dumpURI, err := url.Parse(c.Config.DumpURI)
+	dumpURI, err := url.Parse(c.NRTMv3.DumpURI)
 	if err != nil {
 		return "", "", err
 	}
@@ -243,8 +273,8 @@ func (c *WhoisCache) downloadDump() (serial string, dumpPath string, err error) 
 	}
 
 	// Download serial file
-	log.Printf("Downloading %s", c.Config.SerialURI)
-	if err := downloadFile(serialPath, c.Config.SerialURI); err != nil {
+	log.Printf("Downloading %s", c.NRTMv3.SerialURI)
+	if err := downloadFile(serialPath, c.NRTMv3.SerialURI); err != nil {
 		return "", "", fmt.Errorf("downloading serial: %w", err)
 	}
 
@@ -256,8 +286,8 @@ func (c *WhoisCache) downloadDump() (serial string, dumpPath string, err error) 
 
 	// Download dump if serial changed
 	if newSerial != existingSerial {
-		log.Printf("Downloading %s", c.Config.DumpURI)
-		if err := downloadFile(dumpPath, c.Config.DumpURI); err != nil {
+		log.Printf("Downloading %s", c.NRTMv3.DumpURI)
+		if err := downloadFile(dumpPath, c.NRTMv3.DumpURI); err != nil {
 			return "", "", fmt.Errorf("downloading dump: %w", err)
 		}
 	}
@@ -265,27 +295,47 @@ func (c *WhoisCache) downloadDump() (serial string, dumpPath string, err error) 
 	return newSerial, dumpPath, nil
 }
 
-// downloadFile downloads a file from a URI using net/http.
+// downloadFile downloads a file from a URI (HTTP, HTTPS, or FTP).
 func downloadFile(dest, uri string) error {
 	_ = os.Remove(dest)
 	tmp := dest + ".part"
 
 	log.Printf("Downloading %s", uri)
-	resp, err := http.Get(uri)
-	if err != nil {
-		return fmt.Errorf("HTTP GET %s: %w", uri, err)
-	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP GET %s: status %d", uri, resp.StatusCode)
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		return fmt.Errorf("parsing URI %s: %w", uri, err)
 	}
+
+	var reader io.ReadCloser
+
+	switch parsed.Scheme {
+	case "http", "https":
+		resp, err := http.Get(uri)
+		if err != nil {
+			return fmt.Errorf("HTTP GET %s: %w", uri, err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return fmt.Errorf("HTTP GET %s: status %d", uri, resp.StatusCode)
+		}
+		reader = resp.Body
+	case "ftp":
+		r, err := downloadFTP(parsed)
+		if err != nil {
+			return fmt.Errorf("FTP %s: %w", uri, err)
+		}
+		reader = r
+	default:
+		return fmt.Errorf("unsupported URI scheme: %s", parsed.Scheme)
+	}
+	defer reader.Close()
 
 	f, err := os.Create(tmp)
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	if _, err := io.Copy(f, reader); err != nil {
 		f.Close()
 		return fmt.Errorf("writing %s: %w", tmp, err)
 	}
@@ -294,6 +344,49 @@ func downloadFile(dest, uri string) error {
 	}
 
 	return os.Rename(tmp, dest)
+}
+
+// downloadFTP connects to an FTP server and retrieves a file, returning a ReadCloser.
+func downloadFTP(u *url.URL) (io.ReadCloser, error) {
+	host := u.Host
+	if !strings.Contains(host, ":") {
+		host += ":21"
+	}
+
+	conn, err := ftp.Dial(host)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to %s: %w", host, err)
+	}
+
+	if err := conn.Login("anonymous", "anonymous@"); err != nil {
+		conn.Quit()
+		return nil, fmt.Errorf("login: %w", err)
+	}
+
+	resp, err := conn.Retr(u.Path)
+	if err != nil {
+		conn.Quit()
+		return nil, fmt.Errorf("retrieving %s: %w", u.Path, err)
+	}
+
+	// Wrap to close both the response and the connection
+	return &ftpReadCloser{resp: resp, conn: conn}, nil
+}
+
+// ftpReadCloser wraps an FTP response to clean up the connection on close.
+type ftpReadCloser struct {
+	resp *ftp.Response
+	conn *ftp.ServerConn
+}
+
+func (f *ftpReadCloser) Read(p []byte) (int, error) {
+	return f.resp.Read(p)
+}
+
+func (f *ftpReadCloser) Close() error {
+	err := f.resp.Close()
+	f.conn.Quit()
+	return err
 }
 
 // loadState deserializes a WhoisCacheState from a gob-encoded file.
