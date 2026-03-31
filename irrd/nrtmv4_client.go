@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -48,6 +49,13 @@ func (c *WhoisCache) updateNRTMv4() error {
 	if err != nil {
 		return fmt.Errorf("NRTMv4: %w", err)
 	}
+
+	// Resolve relative URLs against the notification file's base URL
+	baseURL, err := url.Parse(c.NRTMv4.NotificationURI)
+	if err != nil {
+		return fmt.Errorf("NRTMv4: parsing notification URI: %w", err)
+	}
+	resolveNRTMv4URLs(nf, baseURL)
 
 	log.Printf("NRTMv4: notification: source=%s session=%s version=%d", nf.Source, nf.SessionID, nf.Version)
 
@@ -205,4 +213,21 @@ func downloadAndVerifyHash(url, expectedHash string) (io.ReadCloser, error) {
 	}
 
 	return io.NopCloser(strings.NewReader(string(data))), nil
+}
+
+// resolveNRTMv4URLs resolves relative URLs in the notification file against the base URL.
+func resolveNRTMv4URLs(nf *NotificationFile, base *url.URL) {
+	nf.Snapshot.URL = resolveURL(base, nf.Snapshot.URL)
+	for i := range nf.Deltas {
+		nf.Deltas[i].URL = resolveURL(base, nf.Deltas[i].URL)
+	}
+}
+
+// resolveURL resolves a potentially relative URL against a base URL.
+func resolveURL(base *url.URL, ref string) string {
+	parsed, err := url.Parse(ref)
+	if err != nil {
+		return ref
+	}
+	return base.ResolveReference(parsed).String()
 }
