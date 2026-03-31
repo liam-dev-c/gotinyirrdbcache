@@ -154,17 +154,17 @@ func (svc *WhoisCacheService) GetCacheState(name string) (CacheStateProvider, er
 
 // StartUpdateLoop runs the initial update of all caches in the service,
 // then enters an infinite loop updating each cache at the configured interval.
-// The initial update is fatal on error. Subsequent update errors are logged
-// but not fatal. This should be called in a goroutine.
-func (svc *WhoisCacheService) StartUpdateLoop() error {
-	// Initial update - errors are fatal
+// Update errors are logged but never fatal — the server stays up and retries
+// on the next interval. This should be called in a goroutine.
+func (svc *WhoisCacheService) StartUpdateLoop() {
+	// Initial update
 	for _, cache := range svc.Caches {
 		log.Printf("Initial update: %s", cache.Config.Name)
 		if err := cache.Update(); err != nil {
-			return fmt.Errorf("initial update of %s failed: %w", cache.Config.Name, err)
+			log.Printf("Error in initial update of %s: %v", cache.Config.Name, err)
 		}
 	}
-	log.Printf("Caches initialised")
+	log.Printf("Initial update pass complete")
 
 	// Update loop
 	for {

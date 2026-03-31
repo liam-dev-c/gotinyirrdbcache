@@ -25,11 +25,7 @@ func main() {
 	service := irrd.NewWhoisCacheService(cfg)
 
 	// Run the update loop in the background
-	go func() {
-		if err := service.StartUpdateLoop(); err != nil {
-			log.Fatalf("Update loop failed: %v", err)
-		}
-	}()
+	go service.StartUpdateLoop()
 
 	server := irrd.NewServer(service)
 	log.Printf("Listening on http://%s/", cfg.HTTPEndpoint)
