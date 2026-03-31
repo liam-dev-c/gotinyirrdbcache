@@ -19,16 +19,16 @@ type NRTMv3Config struct {
 type NRTMv4Config struct {
 	Name            string `json:"name"`
 	NotificationURI string `json:"notification_uri"`     // Update Notification File URL
-	PublicKey        string `json:"public_key,omitempty"` // Ed25519 or ES256 public key, base64-encoded
+	PublicKey       string `json:"public_key,omitempty"` // Ed25519 or ES256 public key, base64-encoded
 }
 
 // Config holds all application settings.
 type Config struct {
-	CacheDataDirectory  string                    `json:"cache_data_directory"`
-	WhoisUpdateInterval int                       `json:"whois_update_interval"` // seconds
-	HTTPEndpoint        string                    `json:"http_endpoint"`
-	NRTMv3Upstreams     map[string]NRTMv3Config   `json:"nrtmv3_upstreams"`
-	NRTMv4Upstreams     map[string]NRTMv4Config   `json:"nrtmv4_upstreams"`
+	CacheDataDirectory  string                  `json:"cache_data_directory"`
+	WhoisUpdateInterval int                     `json:"whois_update_interval"` // seconds
+	HTTPEndpoint        string                  `json:"http_endpoint"`
+	NRTMv3Upstreams     map[string]NRTMv3Config `json:"nrtmv3_upstreams"`
+	NRTMv4Upstreams     map[string]NRTMv4Config `json:"nrtmv4_upstreams"`
 }
 
 // DefaultConfig returns the default configuration with standard IRRD upstreams.
@@ -54,8 +54,8 @@ func DefaultConfig() *Config {
 			},
 			"ARIN": {
 				Name:      "ARIN",
-				DumpURI:   "ftp://ftp.arin.net/pub/rr/arin.db",
-				SerialURI: "ftp://ftp.arin.net/pub/rr/ARIN.CURRENTSERIAL",
+				DumpURI:   "https://ftp.arin.net/pub/rr/arin.db.gz",
+				SerialURI: "https://ftp.arin.net/pub/rr/ARIN.CURRENTSERIAL",
 				Host:      "rr.arin.net",
 				Port:      4444,
 			},

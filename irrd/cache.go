@@ -300,8 +300,6 @@ func downloadFile(dest, uri string) error {
 	_ = os.Remove(dest)
 	tmp := dest + ".part"
 
-	log.Printf("Downloading %s", uri)
-
 	parsed, err := url.Parse(uri)
 	if err != nil {
 		return fmt.Errorf("parsing URI %s: %w", uri, err)
