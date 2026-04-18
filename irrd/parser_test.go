@@ -253,3 +253,63 @@ func TestHandleError_GeneralError(t *testing.T) {
 		t.Fatalf("expected ErrorResponse, got %T", err)
 	}
 }
+
+func TestParseRecord_EmptyBlock(t *testing.T) {
+	_, err := ParseRecord([]string{})
+	if err == nil {
+		t.Fatal("expected error for empty block")
+	}
+	var pf *ParseFailure
+	if !errors.As(err, &pf) {
+		t.Fatalf("expected ParseFailure, got %T", err)
+	}
+}
+
+func TestParseRecord_Route_MissingOrigin(t *testing.T) {
+	block := []string{"route:  1.2.3.0/24"}
+	_, err := ParseRecord(block)
+	if err == nil {
+		t.Fatal("expected error for route missing origin")
+	}
+}
+
+func TestParseRecord_Route6_MissingOrigin(t *testing.T) {
+	block := []string{"route6:  2001:db8::/32"}
+	_, err := ParseRecord(block)
+	if err == nil {
+		t.Fatal("expected error for route6 missing origin")
+	}
+}
+
+func TestParseMacro_MissingASSet(t *testing.T) {
+	_, err := parseMacro([]string{"descr: no as-set key here"})
+	if err == nil {
+		t.Fatal("expected error for missing as-set key")
+	}
+}
+
+func TestParseRoute_MissingRouteKey(t *testing.T) {
+	_, err := parseRoute([]string{"descr: no route key here"})
+	if err == nil {
+		t.Fatal("expected error for missing route key")
+	}
+}
+
+func TestParseRoute6_MissingRoute6Key(t *testing.T) {
+	_, err := parseRoute6([]string{"descr: no route6 key here"})
+	if err == nil {
+		t.Fatal("expected error for missing route6 key")
+	}
+}
+
+func TestBlockLookupMany_CommentLine(t *testing.T) {
+	block := []string{
+		"members: AS1, AS2,",
+		"# this is a comment",
+		"         AS3",
+	}
+	lines := BlockLookupMany(block, "members")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines (comment skipped), got %d: %v", len(lines), lines)
+	}
+}

@@ -1,6 +1,7 @@
 package irrd
 
 import (
+	"bufio"
 	"errors"
 	"os"
 	"strings"
@@ -299,5 +300,38 @@ func TestReadHeader_OutOfSync(t *testing.T) {
 	var oose *OutOfSyncError
 	if !errors.As(err, &oose) {
 		t.Fatalf("expected OutOfSyncError, got %T: %v", err, err)
+	}
+}
+
+func TestParseUpdates_NoHeader(t *testing.T) {
+	updates, err := ParseUpdates(strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updates != nil {
+		t.Errorf("expected nil updates, got %v", updates)
+	}
+}
+
+func TestReadActSerial_ParseFailure(t *testing.T) {
+	br := bufio.NewReader(strings.NewReader("UNKNOWN content\n"))
+	_, _, err := readActSerial(br, "")
+	if err == nil {
+		t.Fatal("expected error for unexpected line")
+	}
+	var pf *ParseFailure
+	if !errors.As(err, &pf) {
+		t.Fatalf("expected ParseFailure, got %T: %v", err, err)
+	}
+}
+
+func TestReadActSerial_CommentAtEOF(t *testing.T) {
+	br := bufio.NewReader(strings.NewReader("# comment without newline"))
+	action, _, err := readActSerial(br, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if action != "" {
+		t.Errorf("expected empty action, got %q", action)
 	}
 }

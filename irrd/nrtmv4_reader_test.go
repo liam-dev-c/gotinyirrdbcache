@@ -127,6 +127,78 @@ func TestParseNRTMv4Delta_InvalidAction(t *testing.T) {
 	}
 }
 
+func TestParseNRTMv4Snapshot_InvalidJSON(t *testing.T) {
+	data := `{"nrtm_version":4,"type":"snapshot","source":"TEST","session_id":"s1","version":10}` + "\n" +
+		`{not valid json}` + "\n"
+
+	_, err := ParseNRTMv4Snapshot(strings.NewReader(data))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON record")
+	}
+}
+
+func TestParseNRTMv4Snapshot_EmptyRPSL(t *testing.T) {
+	data := `{"nrtm_version":4,"type":"snapshot","source":"TEST","session_id":"s1","version":10}` + "\n" +
+		`{"object_text":""}` + "\n"
+
+	records, err := ParseNRTMv4Snapshot(strings.NewReader(data))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Empty RPSL is skipped (parseRPSLText returns error, record is skipped)
+	if len(records) != 0 {
+		t.Errorf("expected 0 records for empty RPSL, got %d", len(records))
+	}
+}
+
+func TestParseNRTMv4Delta_InvalidJSON(t *testing.T) {
+	data := `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":11}` + "\n" +
+		`{not valid json}` + "\n"
+
+	_, err := ParseNRTMv4Delta(strings.NewReader(data))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON record")
+	}
+}
+
+func TestParseNRTMv4Delta_SkipUnparseable(t *testing.T) {
+	data := `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":11}` + "\n" +
+		`{"action":"add_modify","object_text":""}` + "\n"
+
+	updates, err := ParseNRTMv4Delta(strings.NewReader(data))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Empty RPSL is skipped
+	if len(updates) != 0 {
+		t.Errorf("expected 0 updates, got %d", len(updates))
+	}
+}
+
+func TestParseNRTMv4Snapshot_SkipUnrecognised(t *testing.T) {
+	data := `{"nrtm_version":4,"type":"snapshot","source":"TEST","session_id":"s1","version":10}` + "\n" +
+		`{"object_text":"mntner: MAINT-AS1\ndescr: test maintainer\n"}` + "\n" +
+		`{"object_text":"route: 10.0.0.0/8\norigin: AS1\nsource: TEST\n"}` + "\n"
+
+	records, err := ParseNRTMv4Snapshot(strings.NewReader(data))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record (mntner skipped), got %d", len(records))
+	}
+	if _, ok := records[0].(Route); !ok {
+		t.Fatalf("expected Route, got %T", records[0])
+	}
+}
+
+func TestParseRPSLText_Empty(t *testing.T) {
+	_, err := parseRPSLText("")
+	if err == nil {
+		t.Fatal("expected error for empty RPSL text")
+	}
+}
+
 func TestParseRPSLText(t *testing.T) {
 	text := "route: 203.0.113.0/24\norigin: AS65000\nsource: TEST\n"
 	rec, err := parseRPSLText(text)

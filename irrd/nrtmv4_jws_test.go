@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"math/big"
@@ -288,5 +289,186 @@ func TestDecodeES256PublicKey_RawXY(t *testing.T) {
 	}
 }
 
-// Suppress unused import warning for big
-var _ = new(big.Int)
+func TestVerifyNotificationFile_InvalidBase64Header(t *testing.T) {
+	_, err := VerifyNotificationFile("!!!.payload.sig", "")
+	if err == nil {
+		t.Fatal("expected error for invalid base64 header")
+	}
+}
+
+func TestVerifyNotificationFile_InvalidJSONHeader(t *testing.T) {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{notjson`))
+	_, err := VerifyNotificationFile(header+".payload.sig", "")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON header")
+	}
+}
+
+func TestVerifyNotificationFile_InvalidBase64Payload(t *testing.T) {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"EdDSA"}`))
+	_, err := VerifyNotificationFile(header+".!!!.sig", "")
+	if err == nil {
+		t.Fatal("expected error for invalid base64 payload")
+	}
+}
+
+func TestVerifyNotificationFile_InvalidBase64Sig(t *testing.T) {
+	_, privKey, _ := ed25519.GenerateKey(rand.Reader)
+	pubKey, _, _ := ed25519.GenerateKey(rand.Reader)
+	pubKeyB64 := base64.StdEncoding.EncodeToString(pubKey)
+
+	jws := makeTestEdDSAJWS(t, []byte(`{}`), privKey)
+	parts := splitJWS(jws)
+	_, err := VerifyNotificationFile(parts[0]+"."+parts[1]+".!!!", pubKeyB64)
+	if err == nil {
+		t.Fatal("expected error for invalid base64 signature")
+	}
+}
+
+func TestVerifyEdDSA_BadPublicKey(t *testing.T) {
+	err := verifyEdDSA([]byte("input"), []byte("sig"), "not-valid-base64!!!")
+	if err == nil {
+		t.Fatal("expected error for bad public key")
+	}
+}
+
+func TestVerifyES256_WrongLengthSig(t *testing.T) {
+	privKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	xBytes := privKey.PublicKey.X.Bytes()
+	yBytes := privKey.PublicKey.Y.Bytes()
+	rawPub := make([]byte, 64)
+	copy(rawPub[32-len(xBytes):32], xBytes)
+	copy(rawPub[64-len(yBytes):64], yBytes)
+	pubKeyB64 := base64.StdEncoding.EncodeToString(rawPub)
+
+	err := verifyES256([]byte("input"), []byte("tooshort"), pubKeyB64)
+	if err == nil {
+		t.Fatal("expected error for wrong-length signature")
+	}
+}
+
+func TestVerifyES256_BadPublicKey(t *testing.T) {
+	err := verifyES256([]byte("input"), make([]byte, 64), "not-valid-base64!!!")
+	if err == nil {
+		t.Fatal("expected error for bad public key")
+	}
+}
+
+func TestDecodeEd25519PublicKey_InvalidBase64(t *testing.T) {
+	_, err := decodeEd25519PublicKey("not-valid-base64!!!")
+	if err == nil {
+		t.Fatal("expected error for invalid base64")
+	}
+}
+
+func TestDecodeES256PublicKey_InvalidBase64(t *testing.T) {
+	_, err := decodeES256PublicKey("not-valid-base64!!!")
+	if err == nil {
+		t.Fatal("expected error for invalid base64")
+	}
+}
+
+func TestDecodeES256PublicKey_BadPrefix65(t *testing.T) {
+	bad := make([]byte, 65)
+	bad[0] = 0x03 // not 0x04
+	_, err := decodeES256PublicKey(base64.StdEncoding.EncodeToString(bad))
+	if err == nil {
+		t.Fatal("expected error for bad 65-byte prefix")
+	}
+}
+
+func TestDecodeES256PublicKey_DER(t *testing.T) {
+	privKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	derBytes, _ := x509.MarshalPKIXPublicKey(&privKey.PublicKey)
+	b64 := base64.StdEncoding.EncodeToString(derBytes)
+
+	decoded, err := decodeES256PublicKey(b64)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decoded.X.Cmp(privKey.PublicKey.X) != 0 || decoded.Y.Cmp(privKey.PublicKey.Y) != 0 {
+		t.Error("decoded DER key does not match")
+	}
+}
+
+func TestDecodeES256PublicKey_DER_Invalid(t *testing.T) {
+	// 100 bytes of garbage that isn't valid PKIX
+	garbage := make([]byte, 100)
+	_, err := decodeES256PublicKey(base64.StdEncoding.EncodeToString(garbage))
+	if err == nil {
+		t.Fatal("expected error for invalid DER")
+	}
+}
+
+func TestDecodeES256PublicKey_NonECDSA(t *testing.T) {
+	// Ed25519 key marshaled as PKIX will not type-assert to *ecdsa.PublicKey
+	edPub, _, _ := ed25519.GenerateKey(rand.Reader)
+	derBytes, _ := x509.MarshalPKIXPublicKey(edPub)
+	b64 := base64.StdEncoding.EncodeToString(derBytes)
+
+	_, err := decodeES256PublicKey(b64)
+	if err == nil {
+		t.Fatal("expected error for non-ECDSA key")
+	}
+}
+
+func TestDecodeES256PublicKey_WrongCurve(t *testing.T) {
+	privKey, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	derBytes, _ := x509.MarshalPKIXPublicKey(&privKey.PublicKey)
+	b64 := base64.StdEncoding.EncodeToString(derBytes)
+
+	_, err := decodeES256PublicKey(b64)
+	if err == nil {
+		t.Fatal("expected error for wrong curve (P-384)")
+	}
+}
+
+func TestParseNotificationFileJSON_InvalidJSON(t *testing.T) {
+	_, err := ParseNotificationFileJSON([]byte("{invalid json}"))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+// splitJWS splits a compact JWS into its three parts.
+func splitJWS(jws string) []string {
+	var parts []string
+	start := 0
+	dots := 0
+	for i, c := range jws {
+		if c == '.' {
+			parts = append(parts, jws[start:i])
+			start = i + 1
+			dots++
+			if dots == 2 {
+				parts = append(parts, jws[start:])
+				break
+			}
+		}
+	}
+	return parts
+}
+
+func TestMarshalES256Sig_Padding(t *testing.T) {
+	// r with high bit set → needs leading zero
+	r := new(big.Int).SetBytes([]byte{0x80, 0x01})
+	// s without high bit set
+	s := new(big.Int).SetBytes([]byte{0x01})
+	der := marshalES256Sig(r, s)
+	if len(der) < 4 || der[0] != 0x30 {
+		t.Fatalf("expected ASN.1 SEQUENCE, got %x", der)
+	}
+}
+
+func TestMarshalES256Sig_PaddingBoth(t *testing.T) {
+	// both r and s with high bit set
+	r := new(big.Int).SetBytes([]byte{0x80, 0x01})
+	s := new(big.Int).SetBytes([]byte{0xFF, 0x02})
+	der := marshalES256Sig(r, s)
+	if len(der) < 4 || der[0] != 0x30 {
+		t.Fatalf("expected ASN.1 SEQUENCE, got %x", der)
+	}
+}
+
+// Suppress unused import warning for sha256
+var _ = sha256.New

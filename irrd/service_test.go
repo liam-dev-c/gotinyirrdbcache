@@ -157,6 +157,28 @@ func TestCombinerMap_Prefix4(t *testing.T) {
 	}
 }
 
+func TestNewWhoisCacheService(t *testing.T) {
+	cfg := &Config{
+		CacheDataDirectory: "/tmp",
+		NRTMv3Upstreams: map[string]NRTMv3Config{
+			"RADB": {Name: "RADB", Host: "whois.radb.net", Port: 43},
+		},
+		NRTMv4Upstreams: map[string]NRTMv4Config{
+			"RIPE": {Name: "RIPE", NotificationURI: "https://example.com/nf"},
+		},
+	}
+	svc := NewWhoisCacheService(cfg)
+	if len(svc.Caches) != 2 {
+		t.Fatalf("expected 2 caches, got %d", len(svc.Caches))
+	}
+	if _, ok := svc.Caches["RADB"]; !ok {
+		t.Error("expected RADB cache")
+	}
+	if _, ok := svc.Caches["RIPE"]; !ok {
+		t.Error("expected RIPE cache")
+	}
+}
+
 func TestCombinerMap_Prefix6(t *testing.T) {
 	s1 := makeStateWithData()
 	combined := NewCacheStateCombiner(map[string]*WhoisCacheState{"a": s1})
