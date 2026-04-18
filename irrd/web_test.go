@@ -302,8 +302,12 @@ func TestServer_Update_CorruptFile(t *testing.T) {
 
 	srv := newServerWithCachePath(t, f.Name())
 	w := doReq(t, srv, "/cache/TEST/update")
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d: %s", w.Code, w.Body.String())
+	}
+	// Corrupt file should have been removed
+	if _, err := os.Stat(f.Name()); !os.IsNotExist(err) {
+		t.Error("expected corrupt cache file to be removed")
 	}
 }
 

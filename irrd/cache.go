@@ -77,7 +77,9 @@ func (c *WhoisCache) Load() error {
 	log.Printf("Restoring state from %s", c.cachePath)
 	state, err := loadState(c.cachePath)
 	if err != nil {
-		return fmt.Errorf("loading cache state: %w", err)
+		log.Printf("Corrupt cache file %s: %v — removing", c.cachePath, err)
+		os.Remove(c.cachePath)
+		return ErrCacheNotReady
 	}
 	c.State = state
 	c.Ready = true
@@ -92,7 +94,10 @@ func (c *WhoisCache) Update() error {
 		if _, err := os.Stat(c.cachePath); err == nil {
 			log.Printf("Restoring state from %s", c.cachePath)
 			state, err := loadState(c.cachePath)
-			if err == nil {
+			if err != nil {
+				log.Printf("Corrupt cache file %s: %v — removing", c.cachePath, err)
+				os.Remove(c.cachePath)
+			} else {
 				c.State = state
 				c.Ready = true
 			}
