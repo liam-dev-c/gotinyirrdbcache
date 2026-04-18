@@ -43,11 +43,16 @@ var (
 		Name: "irrd_http_requests_total",
 		Help: "Total HTTP requests by method and path.",
 	}, []string{"method", "path", "status"})
+
+	cacheCorruptTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "irrd_cache_corrupt_total",
+		Help: "Number of times a corrupt cache file was detected and removed.",
+	}, []string{"cache"})
 )
 
 func init() {
 	prometheus.MustRegister(cacheReady, cacheSerial, cacheMacroCount,
-		cachePrefix4Count, cachePrefix6Count, httpRequestsTotal)
+		cachePrefix4Count, cachePrefix6Count, httpRequestsTotal, cacheCorruptTotal)
 }
 
 // Server is the HTTP server for the IRRD cache API.

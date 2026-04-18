@@ -301,6 +301,9 @@ func TestServer_Update_CorruptFile(t *testing.T) {
 	defer os.Remove(f.Name())
 
 	srv := newServerWithCachePath(t, f.Name())
+	cache := srv.Service.Caches["TEST"]
+	cache.Ready = true // simulate previously-ready cache
+
 	w := doReq(t, srv, "/cache/TEST/update")
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d: %s", w.Code, w.Body.String())
@@ -308,6 +311,13 @@ func TestServer_Update_CorruptFile(t *testing.T) {
 	// Corrupt file should have been removed
 	if _, err := os.Stat(f.Name()); !os.IsNotExist(err) {
 		t.Error("expected corrupt cache file to be removed")
+	}
+	// Cache should be marked not ready with empty state
+	if cache.Ready {
+		t.Error("expected cache Ready to be false after corruption")
+	}
+	if cache.State.Serial != "" || len(cache.State.Macros) != 0 {
+		t.Error("expected cache State to be reset after corruption")
 	}
 }
 

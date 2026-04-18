@@ -79,6 +79,9 @@ func (c *WhoisCache) Load() error {
 	if err != nil {
 		log.Printf("Corrupt cache file %s: %v — removing", c.cachePath, err)
 		os.Remove(c.cachePath)
+		c.State = NewWhoisCacheState()
+		c.Ready = false
+		cacheCorruptTotal.WithLabelValues(c.Name).Inc()
 		return ErrCacheNotReady
 	}
 	c.State = state
@@ -97,6 +100,7 @@ func (c *WhoisCache) Update() error {
 			if err != nil {
 				log.Printf("Corrupt cache file %s: %v — removing", c.cachePath, err)
 				os.Remove(c.cachePath)
+				cacheCorruptTotal.WithLabelValues(c.Name).Inc()
 			} else {
 				c.State = state
 				c.Ready = true
