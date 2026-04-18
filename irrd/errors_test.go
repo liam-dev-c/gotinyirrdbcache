@@ -60,3 +60,26 @@ func TestParseFailure(t *testing.T) {
 		t.Error("errors.As failed for ParseFailure")
 	}
 }
+
+func TestSessionResetError(t *testing.T) {
+	err := &SessionResetError{OldSession: "old-id", NewSession: "new-id"}
+	expected := "NRTMv4 session reset: old-id -> new-id"
+	if err.Error() != expected {
+		t.Errorf("unexpected Error(): %s", err.Error())
+	}
+	var target *SessionResetError
+	if !errors.As(err, &target) {
+		t.Error("errors.As failed for SessionResetError")
+	}
+}
+
+func TestSignatureError(t *testing.T) {
+	err := &SignatureError{Message: "invalid signature"}
+	if err.Error() != "invalid signature" {
+		t.Errorf("unexpected Error(): %s", err.Error())
+	}
+	var target *SignatureError
+	if !errors.As(err, &target) {
+		t.Error("errors.As failed for SignatureError")
+	}
+}

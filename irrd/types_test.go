@@ -42,9 +42,25 @@ func TestUnrecognisedFields(t *testing.T) {
 }
 
 func TestRecordInterface(t *testing.T) {
-	// Verify all types satisfy Record
 	var _ Record = Macro{}
 	var _ Record = Route{}
 	var _ Record = Route6{}
 	var _ Record = Unrecognised{}
+}
+
+func TestRecordType(t *testing.T) {
+	cases := []struct {
+		rec      Record
+		expected string
+	}{
+		{Macro{}, "macro"},
+		{Route{}, "route"},
+		{Route6{}, "route6"},
+		{Unrecognised{}, "unrecognised"},
+	}
+	for _, tc := range cases {
+		if got := tc.rec.recordType(); got != tc.expected {
+			t.Errorf("%T.recordType() = %q, want %q", tc.rec, got, tc.expected)
+		}
+	}
 }

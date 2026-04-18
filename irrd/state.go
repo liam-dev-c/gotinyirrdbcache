@@ -1,6 +1,9 @@
 package irrd
 
-import "time"
+import (
+	"sort"
+	"time"
+)
 
 // StringSet is a set of strings backed by a map.
 type StringSet map[string]struct{}
@@ -30,12 +33,13 @@ func (s StringSet) Contains(val string) bool {
 	return ok
 }
 
-// Slice returns the set contents as a slice.
+// Slice returns the set contents as a sorted slice.
 func (s StringSet) Slice() []string {
 	result := make([]string, 0, len(s))
 	for k := range s {
 		result = append(result, k)
 	}
+	sort.Strings(result)
 	return result
 }
 

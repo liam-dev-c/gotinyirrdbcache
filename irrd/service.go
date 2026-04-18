@@ -3,6 +3,7 @@ package irrd
 import (
 	"fmt"
 	"log"
+	"sort"
 	"time"
 )
 
@@ -55,13 +56,15 @@ func (d *directMap) Keys() []string {
 	for k := range d.m {
 		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 	return keys
 }
 
 func (d *directMap) Items() []MapEntry {
-	entries := make([]MapEntry, 0, len(d.m))
-	for k, v := range d.m {
-		entries = append(entries, MapEntry{Key: k, Value: v.Slice()})
+	keys := d.Keys()
+	entries := make([]MapEntry, 0, len(keys))
+	for _, k := range keys {
+		entries = append(entries, MapEntry{Key: k, Value: d.m[k].Slice()})
 	}
 	return entries
 }

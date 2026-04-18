@@ -76,6 +76,7 @@ func (c *CombinerDict[V]) Keys() []string {
 	for k := range seen {
 		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 	return keys
 }
 

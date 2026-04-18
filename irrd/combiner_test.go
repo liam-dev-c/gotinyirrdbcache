@@ -41,8 +41,15 @@ func TestCombinerDict_GetItem(t *testing.T) {
 	if ok {
 		t.Error("expected C to be missing")
 	}
+}
 
-	// MustGet panics for missing key
+func TestCombinerDict_MustGet(t *testing.T) {
+	_, combined := makeCombinerDict()
+
+	if v := combined.MustGet("A"); v != 21 {
+		t.Errorf("expected A=21, got %d", v)
+	}
+
 	defer func() {
 		if r := recover(); r == nil {
 			t.Error("expected MustGet to panic for missing key")
@@ -90,6 +97,13 @@ func TestCombinerDict_Items(t *testing.T) {
 	if len(items) != 2 {
 		t.Errorf("expected 2 items, got %d", len(items))
 	}
+}
+
+func TestStringSetUnion(t *testing.T) {
+	a := NewStringSet([]string{"a", "b"})
+	b := NewStringSet([]string{"b", "c"})
+	result := StringSetUnion(a, b)
+	assertStringSet(t, result, []string{"a", "b", "c"})
 }
 
 func TestCacheStateCombiner_Dicts(t *testing.T) {

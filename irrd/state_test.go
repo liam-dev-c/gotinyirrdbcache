@@ -91,6 +91,20 @@ func TestState_UpdatedAt(t *testing.T) {
 	}
 }
 
+func TestStringSet_Slice(t *testing.T) {
+	s := NewStringSet([]string{"c", "a", "b"})
+	got := s.Slice()
+	expected := []string{"a", "b", "c"}
+	if len(got) != len(expected) {
+		t.Fatalf("expected %v, got %v", expected, got)
+	}
+	for i, v := range expected {
+		if got[i] != v {
+			t.Errorf("index %d: expected %q, got %q", i, v, got[i])
+		}
+	}
+}
+
 // assertStringSet checks that a StringSet contains exactly the expected values.
 func assertStringSet(t *testing.T, s StringSet, expected []string) {
 	t.Helper()
