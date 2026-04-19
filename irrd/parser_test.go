@@ -195,6 +195,19 @@ func TestParseHeader_Invalid(t *testing.T) {
 	}
 }
 
+func TestParseHeader_HyphenatedSource(t *testing.T) {
+	h := ParseHeader("%START Version: 3 RIPE-NONAUTH 12345-67890")
+	if h == nil {
+		t.Fatal("expected non-nil header for hyphenated source name")
+	}
+	if h.Source != "RIPE-NONAUTH" {
+		t.Errorf("expected source RIPE-NONAUTH, got %s", h.Source)
+	}
+	if h.Serials[0] != 12345 || h.Serials[1] != 67890 {
+		t.Errorf("unexpected serials: %v", h.Serials)
+	}
+}
+
 func TestParseHeader_Filtered(t *testing.T) {
 	h := ParseHeader("%START Version: 3 ARIN 66038-66844 FILTERED")
 	if h == nil {

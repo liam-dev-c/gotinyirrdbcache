@@ -26,6 +26,15 @@ type DeltaRef struct {
 	Hash    string `json:"hash"` // SHA-256, hex-encoded
 }
 
+// NRTMv4FileHeader is the first record in an NRTMv4 snapshot or delta file.
+type NRTMv4FileHeader struct {
+	NRTMVersion int    `json:"nrtm_version"`
+	Type        string `json:"type"`
+	Source      string `json:"source"`
+	SessionID   string `json:"session_id"`
+	Version     int    `json:"version"`
+}
+
 // NRTMv4Record represents a single record in an NRTMv4 snapshot or delta file.
 // The RPSL text may appear as "object" (RIPE implementation) or "object_text" (RFC draft).
 type NRTMv4Record struct {

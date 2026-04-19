@@ -13,7 +13,7 @@ func TestParseNRTMv4Snapshot_FromFile(t *testing.T) {
 	}
 	defer f.Close()
 
-	records, err := ParseNRTMv4Snapshot(f)
+	records, err := ParseNRTMv4Snapshot(f, "RIPE", "db44e038-1f07-4d54-a307-1b32339f141a", 734256)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestParseNRTMv4Delta_FromFile(t *testing.T) {
 	}
 	defer f.Close()
 
-	updates, err := ParseNRTMv4Delta(f)
+	updates, err := ParseNRTMv4Delta(f, "RIPE", "db44e038-1f07-4d54-a307-1b32339f141a", 734257)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestParseNRTMv4Snapshot_ObjectTextField(t *testing.T) {
 	data := `{"nrtm_version":4,"type":"snapshot","source":"TEST","session_id":"s1","version":10}` + "\n" +
 		`{"object_text":"route: 10.0.0.0/8\norigin: AS1\nsource: TEST\n"}` + "\n"
 
-	records, err := ParseNRTMv4Snapshot(strings.NewReader(data))
+	records, err := ParseNRTMv4Snapshot(strings.NewReader(data), "TEST", "s1", 10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestParseNRTMv4Snapshot_RFC7464(t *testing.T) {
 	data := "\x1e" + `{"nrtm_version":4,"type":"snapshot","source":"TEST","session_id":"s1","version":10}` + "\n" +
 		"\x1e" + `{"object_text":"route: 10.0.0.0/8\norigin: AS1\nsource: TEST\n"}` + "\n"
 
-	records, err := ParseNRTMv4Snapshot(strings.NewReader(data))
+	records, err := ParseNRTMv4Snapshot(strings.NewReader(data), "TEST", "s1", 10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestParseNRTMv4Delta_InvalidAction(t *testing.T) {
 	data := `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":11}` + "\n" +
 		`{"action":"unknown","object":"route: 10.0.0.0/8\norigin: AS1\n"}` + "\n"
 
-	_, err := ParseNRTMv4Delta(strings.NewReader(data))
+	_, err := ParseNRTMv4Delta(strings.NewReader(data), "TEST", "s1", 11)
 	if err == nil {
 		t.Fatal("expected error for unknown action")
 	}
@@ -131,7 +131,7 @@ func TestParseNRTMv4Snapshot_InvalidJSON(t *testing.T) {
 	data := `{"nrtm_version":4,"type":"snapshot","source":"TEST","session_id":"s1","version":10}` + "\n" +
 		`{not valid json}` + "\n"
 
-	_, err := ParseNRTMv4Snapshot(strings.NewReader(data))
+	_, err := ParseNRTMv4Snapshot(strings.NewReader(data), "TEST", "s1", 10)
 	if err == nil {
 		t.Fatal("expected error for invalid JSON record")
 	}
@@ -141,7 +141,7 @@ func TestParseNRTMv4Snapshot_EmptyRPSL(t *testing.T) {
 	data := `{"nrtm_version":4,"type":"snapshot","source":"TEST","session_id":"s1","version":10}` + "\n" +
 		`{"object_text":""}` + "\n"
 
-	records, err := ParseNRTMv4Snapshot(strings.NewReader(data))
+	records, err := ParseNRTMv4Snapshot(strings.NewReader(data), "TEST", "s1", 10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestParseNRTMv4Delta_InvalidJSON(t *testing.T) {
 	data := `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":11}` + "\n" +
 		`{not valid json}` + "\n"
 
-	_, err := ParseNRTMv4Delta(strings.NewReader(data))
+	_, err := ParseNRTMv4Delta(strings.NewReader(data), "TEST", "s1", 11)
 	if err == nil {
 		t.Fatal("expected error for invalid JSON record")
 	}
@@ -165,7 +165,7 @@ func TestParseNRTMv4Delta_SkipUnparseable(t *testing.T) {
 	data := `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":11}` + "\n" +
 		`{"action":"add_modify","object_text":""}` + "\n"
 
-	updates, err := ParseNRTMv4Delta(strings.NewReader(data))
+	updates, err := ParseNRTMv4Delta(strings.NewReader(data), "TEST", "s1", 11)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestParseNRTMv4Snapshot_SkipUnrecognised(t *testing.T) {
 		`{"object_text":"mntner: MAINT-AS1\ndescr: test maintainer\n"}` + "\n" +
 		`{"object_text":"route: 10.0.0.0/8\norigin: AS1\nsource: TEST\n"}` + "\n"
 
-	records, err := ParseNRTMv4Snapshot(strings.NewReader(data))
+	records, err := ParseNRTMv4Snapshot(strings.NewReader(data), "TEST", "s1", 10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -189,6 +189,78 @@ func TestParseNRTMv4Snapshot_SkipUnrecognised(t *testing.T) {
 	}
 	if _, ok := records[0].(Route); !ok {
 		t.Fatalf("expected Route, got %T", records[0])
+	}
+}
+
+func TestParseNRTMv4Snapshot_WrongSource(t *testing.T) {
+	data := `{"nrtm_version":4,"type":"snapshot","source":"OTHER","session_id":"s1","version":10}` + "\n"
+	_, err := ParseNRTMv4Snapshot(strings.NewReader(data), "TEST", "s1", 10)
+	if err == nil {
+		t.Fatal("expected error for wrong source")
+	}
+}
+
+func TestParseNRTMv4Snapshot_WrongSessionID(t *testing.T) {
+	data := `{"nrtm_version":4,"type":"snapshot","source":"TEST","session_id":"other","version":10}` + "\n"
+	_, err := ParseNRTMv4Snapshot(strings.NewReader(data), "TEST", "s1", 10)
+	if err == nil {
+		t.Fatal("expected error for wrong session_id")
+	}
+}
+
+func TestParseNRTMv4Snapshot_WrongVersion(t *testing.T) {
+	data := `{"nrtm_version":4,"type":"snapshot","source":"TEST","session_id":"s1","version":99}` + "\n"
+	_, err := ParseNRTMv4Snapshot(strings.NewReader(data), "TEST", "s1", 10)
+	if err == nil {
+		t.Fatal("expected error for wrong version")
+	}
+}
+
+func TestParseNRTMv4Snapshot_WrongNRTMVersion(t *testing.T) {
+	data := `{"nrtm_version":3,"type":"snapshot","source":"TEST","session_id":"s1","version":10}` + "\n"
+	_, err := ParseNRTMv4Snapshot(strings.NewReader(data), "TEST", "s1", 10)
+	if err == nil {
+		t.Fatal("expected error for nrtm_version != 4")
+	}
+}
+
+func TestParseNRTMv4Delta_WrongSource(t *testing.T) {
+	data := `{"nrtm_version":4,"type":"delta","source":"OTHER","session_id":"s1","version":11}` + "\n"
+	_, err := ParseNRTMv4Delta(strings.NewReader(data), "TEST", "s1", 11)
+	if err == nil {
+		t.Fatal("expected error for wrong source")
+	}
+}
+
+func TestParseNRTMv4Delta_WrongSessionID(t *testing.T) {
+	data := `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"other","version":11}` + "\n"
+	_, err := ParseNRTMv4Delta(strings.NewReader(data), "TEST", "s1", 11)
+	if err == nil {
+		t.Fatal("expected error for wrong session_id")
+	}
+}
+
+func TestParseNRTMv4Delta_WrongVersion(t *testing.T) {
+	data := `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":99}` + "\n"
+	_, err := ParseNRTMv4Delta(strings.NewReader(data), "TEST", "s1", 11)
+	if err == nil {
+		t.Fatal("expected error for wrong version")
+	}
+}
+
+func TestParseNRTMv4Snapshot_InvalidHeaderJSON(t *testing.T) {
+	data := `{not valid json header}` + "\n"
+	_, err := ParseNRTMv4Snapshot(strings.NewReader(data), "TEST", "s1", 10)
+	if err == nil {
+		t.Fatal("expected error for invalid header JSON")
+	}
+}
+
+func TestParseNRTMv4Delta_InvalidHeaderJSON(t *testing.T) {
+	data := `{not valid json header}` + "\n"
+	_, err := ParseNRTMv4Delta(strings.NewReader(data), "TEST", "s1", 11)
+	if err == nil {
+		t.Fatal("expected error for invalid header JSON")
 	}
 }
 

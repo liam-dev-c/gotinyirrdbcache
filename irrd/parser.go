@@ -9,7 +9,7 @@ import (
 
 var (
 	reStripComment = regexp.MustCompile(`\s*#.*`)
-	reHeader       = regexp.MustCompile(`%START Version: (\d+) (\w+) (\d+)-(\d+)`)
+	reHeader       = regexp.MustCompile(`%START Version: (\d+) ([\w-]+) (\d+)-(\d+)`)
 	reRange        = regexp.MustCompile(`.*?(\d+)\W?-\W?(\d+).*`)
 	reInvalidRange = regexp.MustCompile(`.*ERROR.*(I|i)nvalid range.*`)
 	reDontExist    = regexp.MustCompile(`.*ERROR.*serials.*don.t exist.*`)

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -59,7 +60,7 @@ func (c *WhoisCache) updateNRTMv4() error {
 		return fmt.Errorf("NRTMv4: %w", err)
 	}
 
-	nf, err := ParseNotificationFileJSON(payload)
+	nf, err := ParseNotificationFileJSON(payload, c.Name)
 	if err != nil {
 		return fmt.Errorf("NRTMv4: %w", err)
 	}
@@ -84,7 +85,15 @@ func (c *WhoisCache) updateNRTMv4() error {
 		return c.applyNRTMv4Snapshot(nf)
 	}
 
-	return c.applyNRTMv4Deltas(nf)
+	if err := c.applyNRTMv4Deltas(nf); err != nil {
+		var oose *OutOfSyncError
+		if errors.As(err, &oose) {
+			log.Printf("NRTMv4: %v; falling back to snapshot", err)
+			return c.applyNRTMv4Snapshot(nf)
+		}
+		return err
+	}
+	return nil
 }
 
 // applyNRTMv4Snapshot downloads a snapshot to disk, then parses and applies it.
@@ -126,7 +135,7 @@ func (c *WhoisCache) applyNRTMv4Snapshot(nf *NotificationFile) error {
 		reader = gr
 	}
 
-	records, err := ParseNRTMv4Snapshot(reader)
+	records, err := ParseNRTMv4Snapshot(reader, c.Name, nf.SessionID, nf.Snapshot.Version)
 	if err != nil {
 		return fmt.Errorf("NRTMv4 snapshot: %w", err)
 	}
@@ -198,7 +207,7 @@ func (c *WhoisCache) applyDeltasFrom(nf *NotificationFile, fromVersion int) erro
 			return fmt.Errorf("NRTMv4 delta %d: %w", d.Version, err)
 		}
 
-		updates, err := ParseNRTMv4Delta(body)
+		updates, err := ParseNRTMv4Delta(body, c.Name, nf.SessionID, d.Version)
 		body.Close()
 		if err != nil {
 			return fmt.Errorf("NRTMv4 delta %d: %w", d.Version, err)

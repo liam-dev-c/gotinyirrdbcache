@@ -188,11 +188,21 @@ func decodeES256PublicKey(b64Key string) (*ecdsa.PublicKey, error) {
 	}
 }
 
-// ParseNotificationFileJSON parses the JSON payload of a notification file.
-func ParseNotificationFileJSON(data []byte) (*NotificationFile, error) {
+// ParseNotificationFileJSON parses and validates the JSON payload of a notification file.
+// source must match the nf.Source field.
+func ParseNotificationFileJSON(data []byte, source string) (*NotificationFile, error) {
 	var nf NotificationFile
 	if err := json.Unmarshal(data, &nf); err != nil {
 		return nil, fmt.Errorf("parsing notification file: %w", err)
+	}
+	if nf.NRTMVersion != 4 {
+		return nil, fmt.Errorf("notification file: nrtm_version %d, want 4", nf.NRTMVersion)
+	}
+	if nf.Type != "notification" {
+		return nil, fmt.Errorf("notification file: type %q, want \"notification\"", nf.Type)
+	}
+	if nf.Source != source {
+		return nil, fmt.Errorf("notification file: source %q does not match configured source %q", nf.Source, source)
 	}
 	return &nf, nil
 }

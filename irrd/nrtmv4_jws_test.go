@@ -230,7 +230,7 @@ func TestParseNotificationFileJSON(t *testing.T) {
 		]
 	}`)
 
-	nf, err := ParseNotificationFileJSON(data)
+	nf, err := ParseNotificationFileJSON(data, "RIPE")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -424,7 +424,7 @@ func TestDecodeES256PublicKey_WrongCurve(t *testing.T) {
 }
 
 func TestParseNotificationFileJSON_InvalidJSON(t *testing.T) {
-	_, err := ParseNotificationFileJSON([]byte("{invalid json}"))
+	_, err := ParseNotificationFileJSON([]byte("{invalid json}"), "TEST")
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}

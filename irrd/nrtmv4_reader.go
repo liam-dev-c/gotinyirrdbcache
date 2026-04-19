@@ -10,9 +10,8 @@ import (
 )
 
 // ParseNRTMv4Snapshot parses an NRTMv4 snapshot file (JSON Text Sequences, RFC 7464).
-// Each record is a JSON object prefixed by 0x1E with an "object_text" field containing RPSL.
-// The first record is a header with nrtm_version/type/source/session_id/version which is skipped.
-func ParseNRTMv4Snapshot(r io.Reader) ([]Record, error) {
+// The first record is validated against the provided source, sessionID and version.
+func ParseNRTMv4Snapshot(r io.Reader, source, sessionID string, version int) ([]Record, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // up to 10MB per line
 
@@ -30,9 +29,15 @@ func ParseNRTMv4Snapshot(r io.Reader) ([]Record, error) {
 			continue
 		}
 
-		// First record is the file header, skip it
 		if first {
 			first = false
+			var hdr NRTMv4FileHeader
+			if err := json.Unmarshal([]byte(line), &hdr); err != nil {
+				return nil, fmt.Errorf("parsing snapshot file header: %w", err)
+			}
+			if err := validateNRTMv4FileHeader(hdr, "snapshot", source, sessionID, version); err != nil {
+				return nil, err
+			}
 			continue
 		}
 
@@ -66,8 +71,8 @@ func ParseNRTMv4Snapshot(r io.Reader) ([]Record, error) {
 
 // ParseNRTMv4Delta parses an NRTMv4 delta file (JSON Text Sequences, RFC 7464).
 // Returns Update structs with actions mapped: "add_modify" → "ADD", "delete" → "DEL".
-// The first record is a header which is skipped.
-func ParseNRTMv4Delta(r io.Reader) ([]Update, error) {
+// The first record is validated against the provided source, sessionID and version.
+func ParseNRTMv4Delta(r io.Reader, source, sessionID string, version int) ([]Update, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024)
 
@@ -84,6 +89,13 @@ func ParseNRTMv4Delta(r io.Reader) ([]Update, error) {
 
 		if first {
 			first = false
+			var hdr NRTMv4FileHeader
+			if err := json.Unmarshal([]byte(line), &hdr); err != nil {
+				return nil, fmt.Errorf("parsing delta file header: %w", err)
+			}
+			if err := validateNRTMv4FileHeader(hdr, "delta", source, sessionID, version); err != nil {
+				return nil, err
+			}
 			continue
 		}
 
@@ -125,6 +137,26 @@ func mapNRTMv4Action(action string) (string, error) {
 	default:
 		return "", fmt.Errorf("unknown NRTMv4 action: %s", action)
 	}
+}
+
+// validateNRTMv4FileHeader checks that the file header matches the expected values.
+func validateNRTMv4FileHeader(h NRTMv4FileHeader, expectedType, source, sessionID string, version int) error {
+	if h.NRTMVersion != 4 {
+		return fmt.Errorf("NRTMv4 %s file header: nrtm_version %d, want 4", expectedType, h.NRTMVersion)
+	}
+	if h.Type != expectedType {
+		return fmt.Errorf("NRTMv4 %s file header: type %q, want %q", expectedType, h.Type, expectedType)
+	}
+	if h.Source != source {
+		return fmt.Errorf("NRTMv4 %s file header: source %q does not match expected %q", expectedType, h.Source, source)
+	}
+	if h.SessionID != sessionID {
+		return fmt.Errorf("NRTMv4 %s file header: session_id %q does not match notification %q", expectedType, h.SessionID, sessionID)
+	}
+	if h.Version != version {
+		return fmt.Errorf("NRTMv4 %s file header: version %d does not match notification %d", expectedType, h.Version, version)
+	}
+	return nil
 }
 
 // parseRPSLText splits an RPSL object_text into lines and parses it using ParseRecord.

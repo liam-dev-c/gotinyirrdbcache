@@ -775,9 +775,11 @@ func TestApplyDeltasFrom_AllSkipped(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	nf := &NotificationFile{
-		Deltas: []DeltaRef{{Version: 11, URL: srv.URL + "/delta/11", Hash: expectedHash}},
+		SessionID: "s1",
+		Deltas:    []DeltaRef{{Version: 11, URL: srv.URL + "/delta/11", Hash: expectedHash}},
 	}
 	cache := &WhoisCache{
+		Name: "TEST",
 		State: &WhoisCacheState{
 			NRTMv4Version: 10,
 			Macros:        make(map[string]StringSet),
@@ -790,6 +792,117 @@ func TestApplyDeltasFrom_AllSkipped(t *testing.T) {
 
 	if err := cache.applyDeltasFrom(nf, 10); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestUpdateNRTMv4_DeltaOutOfSyncFallsBackToSnapshot verifies that a gap in delta
+// versions triggers an automatic fallback to the snapshot, per NRTMv4 spec.
+//
+// Scenario: client is at v8 (stale). Notification has snapshot v10 and deltas [11, 12].
+// Deltas from v8 would need 9, 10, 11, 12 — but only 11 and 12 are listed.
+// Expected v9, got v11 → OutOfSyncError → fall back to snapshot v10, then apply deltas 11, 12.
+func TestUpdateNRTMv4_DeltaOutOfSyncFallsBackToSnapshot(t *testing.T) {
+	snapshotContent := "\x1e" + `{"nrtm_version":4,"type":"snapshot","source":"TEST","session_id":"sess1","version":10}` + "\n" +
+		"\x1e" + `{"action":"add","object_text":"route: 10.0.0.0/8\norigin: AS1\nsource: TEST\n"}` + "\n"
+
+	delta11Content := "\x1e" + `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"sess1","version":11}` + "\n" +
+		"\x1e" + `{"action":"add_modify","object_text":"route: 192.0.2.0/24\norigin: AS2\nsource: TEST\n"}` + "\n"
+
+	delta12Content := "\x1e" + `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"sess1","version":12}` + "\n" +
+		"\x1e" + `{"action":"add_modify","object_text":"route: 198.51.100.0/24\norigin: AS3\nsource: TEST\n"}` + "\n"
+
+	nf := &NotificationFile{
+		NRTMVersion: 4,
+		Type:        "notification",
+		Source:      "TEST",
+		SessionID:   "sess1",
+		Version:     12,
+		Snapshot:    SnapshotRef{Version: 10, URL: "/snapshot"},
+		Deltas: []DeltaRef{
+			{Version: 11, URL: "/delta/11"},
+			{Version: 12, URL: "/delta/12"},
+		},
+	}
+
+	ts := newTestNRTMv4Server(t, nf,
+		map[string]string{"/snapshot": snapshotContent},
+		map[string]string{"/delta/11": delta11Content, "/delta/12": delta12Content},
+	)
+	defer ts.Close()
+
+	tmpDir := t.TempDir()
+	cfg := &Config{CacheDataDirectory: tmpDir}
+
+	cache := &WhoisCache{
+		Name: "TEST",
+		NRTMv4: &NRTMv4Config{
+			Name:            "TEST",
+			NotificationURI: ts.server.URL + "/notification",
+			PublicKey:       base64.StdEncoding.EncodeToString(ts.pubKey),
+		},
+		// Client is at v8 — deltas 9 and 10 are missing from the notification,
+		// so applyDeltasFrom finds a gap (expected v9, got v11) → OutOfSyncError.
+		State: &WhoisCacheState{
+			Serial:          "8",
+			NRTMv4SessionID: "sess1",
+			NRTMv4Version:   8,
+			Macros:          make(map[string]StringSet),
+			Prefix4:         make(map[string]StringSet),
+			Prefix6:         make(map[string]StringSet),
+		},
+		cachePath: cfg.CachePath("TEST"),
+		cfg:       cfg,
+	}
+
+	if err := cache.updateNRTMv4(); err != nil {
+		t.Fatalf("expected fallback to succeed, got: %v", err)
+	}
+
+	// Should have recovered via snapshot v10, then applied deltas 11 and 12.
+	if cache.State.NRTMv4SessionID != "sess1" {
+		t.Errorf("session = %q, want sess1", cache.State.NRTMv4SessionID)
+	}
+	if cache.State.NRTMv4Version != 12 {
+		t.Errorf("version = %d, want 12", cache.State.NRTMv4Version)
+	}
+}
+
+// TestUpdateNRTMv4_WrongNotificationSource verifies that a source mismatch in the
+// notification file is rejected.
+func TestUpdateNRTMv4_WrongNotificationSource(t *testing.T) {
+	nf := &NotificationFile{
+		NRTMVersion: 4,
+		Type:        "notification",
+		Source:      "OTHER", // wrong source
+		SessionID:   "sess1",
+		Version:     10,
+		Snapshot:    SnapshotRef{Version: 10, URL: "/snapshot"},
+	}
+
+	// Serve a notification with the wrong source
+	nfJSON, _ := json.Marshal(nf)
+	headerB64 := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"EdDSA"}`))
+	payloadB64 := base64.RawURLEncoding.EncodeToString(nfJSON)
+	_, privKey, _ := ed25519.GenerateKey(rand.Reader)
+	sig := ed25519.Sign(privKey, []byte(headerB64+"."+payloadB64))
+	jws := headerB64 + "." + payloadB64 + "." + base64.RawURLEncoding.EncodeToString(sig)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(jws))
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	cache := &WhoisCache{
+		Name:      "TEST",
+		NRTMv4:    &NRTMv4Config{Name: "TEST", NotificationURI: srv.URL},
+		State:     NewWhoisCacheState(),
+		cachePath: filepath.Join(tmpDir, "TEST.cache"),
+		cfg:       &Config{CacheDataDirectory: tmpDir},
+	}
+
+	if err := cache.updateNRTMv4(); err == nil {
+		t.Fatal("expected error for wrong source in notification file")
 	}
 }
 
