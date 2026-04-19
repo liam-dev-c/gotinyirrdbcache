@@ -131,6 +131,9 @@ func BlockLookupMany(block []string, key string) []string {
 			parts := strings.SplitN(val, ":", 2)
 			curKey = parts[0]
 			val = parts[1]
+		} else {
+			// Strip leading '+' from RPSL plus-continuation lines
+			val = strings.TrimPrefix(val, "+")
 		}
 		if curKey == key {
 			val = reStripComment.ReplaceAllString(val, "")

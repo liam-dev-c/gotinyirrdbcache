@@ -2,6 +2,7 @@ package irrd
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -312,6 +313,21 @@ func TestParseRoute6_MissingRoute6Key(t *testing.T) {
 	_, err := parseRoute6([]string{"descr: no route6 key here"})
 	if err == nil {
 		t.Fatal("expected error for missing route6 key")
+	}
+}
+
+func TestBlockLookupMany_PlusContinuation(t *testing.T) {
+	block := []string{
+		"members: AS1, AS2,",
+		"+        AS3, AS4",
+	}
+	lines := BlockLookupMany(block, "members")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
+	}
+	// Second line should have the '+' stripped
+	if strings.Contains(lines[1], "+") {
+		t.Errorf("plus sign not stripped from continuation line: %q", lines[1])
 	}
 }
 

@@ -156,22 +156,21 @@ func parseDeltaDeleteRecord(rec NRTMv4Record) (Record, error) {
 	if rec.PrimaryKey == "" || rec.ObjectClass == "" {
 		return nil, fmt.Errorf("delete record missing object_class or primary_key")
 	}
-	pk := strings.ToUpper(rec.PrimaryKey)
 	switch strings.ToLower(rec.ObjectClass) {
 	case "route":
-		prefix, origin, err := splitRoutePrimaryKey(pk)
+		prefix, origin, err := splitRoutePrimaryKey(rec.PrimaryKey)
 		if err != nil {
 			return nil, err
 		}
-		return Route{Prefix: prefix, Origin: origin}, nil
+		return Route{Prefix: prefix, Origin: strings.ToUpper(origin)}, nil
 	case "route6":
-		prefix, origin, err := splitRoutePrimaryKey(pk)
+		prefix, origin, err := splitRoutePrimaryKey(rec.PrimaryKey)
 		if err != nil {
 			return nil, err
 		}
-		return Route6{Prefix: prefix, Origin: origin}, nil
+		return Route6{Prefix: prefix, Origin: strings.ToUpper(origin)}, nil
 	case "as-set":
-		return Macro{Name: pk}, nil
+		return Macro{Name: strings.ToUpper(rec.PrimaryKey)}, nil
 	default:
 		return Unrecognised{Key: rec.ObjectClass}, nil
 	}

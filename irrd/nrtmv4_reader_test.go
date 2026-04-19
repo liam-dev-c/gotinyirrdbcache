@@ -226,6 +226,7 @@ func TestParseNRTMv4Delta_DeleteRoute(t *testing.T) {
 }
 
 func TestParseNRTMv4Delta_DeleteRoute6(t *testing.T) {
+	// Primary key uses lowercase hex as IRRD sends it; prefix case must be preserved.
 	data := `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":11}` + "\n" +
 		`{"action":"delete","object_class":"route6","primary_key":"2001:db8::/32AS65002"}` + "\n"
 
@@ -240,8 +241,9 @@ func TestParseNRTMv4Delta_DeleteRoute6(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected Route6, got %T", updates[0].Record)
 	}
-	if r.Prefix != "2001:DB8::/32" || r.Origin != "AS65002" {
-		t.Errorf("got prefix=%q origin=%q, want 2001:DB8::/32 AS65002", r.Prefix, r.Origin)
+	// Prefix must keep its original case; only origin is uppercased.
+	if r.Prefix != "2001:db8::/32" || r.Origin != "AS65002" {
+		t.Errorf("got prefix=%q origin=%q, want 2001:db8::/32 AS65002", r.Prefix, r.Origin)
 	}
 }
 
@@ -296,7 +298,7 @@ func TestParseNRTMv4Delta_DeleteMissingFields(t *testing.T) {
 func TestSplitRoutePrimaryKey(t *testing.T) {
 	cases := []struct{ pk, wantPrefix, wantOrigin string }{
 		{"192.0.2.0/24AS65001", "192.0.2.0/24", "AS65001"},
-		{"2001:DB8::/32AS65002", "2001:DB8::/32", "AS65002"},
+		{"2001:db8::/32AS65002", "2001:db8::/32", "AS65002"}, // lowercase IPv6 preserved
 		{"10.0.0.0/8AS1", "10.0.0.0/8", "AS1"},
 	}
 	for _, tc := range cases {
