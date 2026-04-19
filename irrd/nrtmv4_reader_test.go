@@ -84,6 +84,16 @@ func TestParseNRTMv4Delta_FromFile(t *testing.T) {
 	if updates[1].Action != "DEL" {
 		t.Errorf("update 1 action = %q, want DEL", updates[1].Action)
 	}
+	delRoute, ok := updates[1].Record.(Route)
+	if !ok {
+		t.Fatalf("update 1: expected Route, got %T", updates[1].Record)
+	}
+	if delRoute.Prefix != "192.0.2.0/24" {
+		t.Errorf("delete prefix = %q, want 192.0.2.0/24", delRoute.Prefix)
+	}
+	if delRoute.Origin != "AS65001" {
+		t.Errorf("delete origin = %q, want AS65001", delRoute.Origin)
+	}
 }
 
 // TestParseNRTMv4Snapshot_ObjectTextField verifies "object_text" (RFC draft) field also works.
@@ -119,7 +129,7 @@ func TestParseNRTMv4Snapshot_RFC7464(t *testing.T) {
 
 func TestParseNRTMv4Delta_InvalidAction(t *testing.T) {
 	data := `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":11}` + "\n" +
-		`{"action":"unknown","object":"route: 10.0.0.0/8\norigin: AS1\n"}` + "\n"
+		`{"action":"unknown","object_class":"route","primary_key":"10.0.0.0/8AS1"}` + "\n"
 
 	_, err := ParseNRTMv4Delta(strings.NewReader(data), "TEST", "s1", 11)
 	if err == nil {
@@ -189,6 +199,122 @@ func TestParseNRTMv4Snapshot_SkipUnrecognised(t *testing.T) {
 	}
 	if _, ok := records[0].(Route); !ok {
 		t.Fatalf("expected Route, got %T", records[0])
+	}
+}
+
+func TestParseNRTMv4Delta_DeleteRoute(t *testing.T) {
+	data := `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":11}` + "\n" +
+		`{"action":"delete","object_class":"route","primary_key":"192.0.2.0/24AS65001"}` + "\n"
+
+	updates, err := ParseNRTMv4Delta(strings.NewReader(data), "TEST", "s1", 11)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(updates) != 1 {
+		t.Fatalf("got %d updates, want 1", len(updates))
+	}
+	if updates[0].Action != "DEL" {
+		t.Errorf("action = %q, want DEL", updates[0].Action)
+	}
+	r, ok := updates[0].Record.(Route)
+	if !ok {
+		t.Fatalf("expected Route, got %T", updates[0].Record)
+	}
+	if r.Prefix != "192.0.2.0/24" || r.Origin != "AS65001" {
+		t.Errorf("got prefix=%q origin=%q, want 192.0.2.0/24 AS65001", r.Prefix, r.Origin)
+	}
+}
+
+func TestParseNRTMv4Delta_DeleteRoute6(t *testing.T) {
+	data := `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":11}` + "\n" +
+		`{"action":"delete","object_class":"route6","primary_key":"2001:db8::/32AS65002"}` + "\n"
+
+	updates, err := ParseNRTMv4Delta(strings.NewReader(data), "TEST", "s1", 11)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(updates) != 1 || updates[0].Action != "DEL" {
+		t.Fatalf("unexpected updates: %v", updates)
+	}
+	r, ok := updates[0].Record.(Route6)
+	if !ok {
+		t.Fatalf("expected Route6, got %T", updates[0].Record)
+	}
+	if r.Prefix != "2001:DB8::/32" || r.Origin != "AS65002" {
+		t.Errorf("got prefix=%q origin=%q, want 2001:DB8::/32 AS65002", r.Prefix, r.Origin)
+	}
+}
+
+func TestParseNRTMv4Delta_DeleteMacro(t *testing.T) {
+	data := `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":11}` + "\n" +
+		`{"action":"delete","object_class":"as-set","primary_key":"AS-EXAMPLE"}` + "\n"
+
+	updates, err := ParseNRTMv4Delta(strings.NewReader(data), "TEST", "s1", 11)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(updates) != 1 || updates[0].Action != "DEL" {
+		t.Fatalf("unexpected updates: %v", updates)
+	}
+	m, ok := updates[0].Record.(Macro)
+	if !ok {
+		t.Fatalf("expected Macro, got %T", updates[0].Record)
+	}
+	if m.Name != "AS-EXAMPLE" {
+		t.Errorf("got name=%q, want AS-EXAMPLE", m.Name)
+	}
+}
+
+func TestParseNRTMv4Delta_DeleteUnrecognisedClass(t *testing.T) {
+	// Unrecognised object classes in deletes are skipped
+	data := `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":11}` + "\n" +
+		`{"action":"delete","object_class":"mntner","primary_key":"TEST-MNT"}` + "\n"
+
+	updates, err := ParseNRTMv4Delta(strings.NewReader(data), "TEST", "s1", 11)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(updates) != 0 {
+		t.Errorf("expected 0 updates (unrecognised class skipped), got %d", len(updates))
+	}
+}
+
+func TestParseNRTMv4Delta_DeleteMissingFields(t *testing.T) {
+	// Delete record with missing primary_key — should be skipped
+	data := `{"nrtm_version":4,"type":"delta","source":"TEST","session_id":"s1","version":11}` + "\n" +
+		`{"action":"delete","object_class":"route"}` + "\n"
+
+	updates, err := ParseNRTMv4Delta(strings.NewReader(data), "TEST", "s1", 11)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(updates) != 0 {
+		t.Errorf("expected 0 updates (missing primary_key skipped), got %d", len(updates))
+	}
+}
+
+func TestSplitRoutePrimaryKey(t *testing.T) {
+	cases := []struct{ pk, wantPrefix, wantOrigin string }{
+		{"192.0.2.0/24AS65001", "192.0.2.0/24", "AS65001"},
+		{"2001:DB8::/32AS65002", "2001:DB8::/32", "AS65002"},
+		{"10.0.0.0/8AS1", "10.0.0.0/8", "AS1"},
+	}
+	for _, tc := range cases {
+		prefix, origin, err := splitRoutePrimaryKey(tc.pk)
+		if err != nil {
+			t.Errorf("splitRoutePrimaryKey(%q) error: %v", tc.pk, err)
+			continue
+		}
+		if prefix != tc.wantPrefix || origin != tc.wantOrigin {
+			t.Errorf("splitRoutePrimaryKey(%q) = %q, %q; want %q, %q", tc.pk, prefix, origin, tc.wantPrefix, tc.wantOrigin)
+		}
+	}
+}
+
+func TestSplitRoutePrimaryKey_Invalid(t *testing.T) {
+	_, _, err := splitRoutePrimaryKey("no-as-number-here")
+	if err == nil {
+		t.Fatal("expected error for primary key without AS number")
 	}
 }
 

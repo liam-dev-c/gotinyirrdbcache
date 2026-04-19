@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"regexp"
 	"strings"
 )
 
@@ -109,9 +110,17 @@ func ParseNRTMv4Delta(r io.Reader, source, sessionID string, version int) ([]Upd
 			return nil, err
 		}
 
-		parsed, err := parseRPSLText(rec.RPSLText())
+		var parsed Record
+		if action == "DEL" {
+			parsed, err = parseDeltaDeleteRecord(rec)
+		} else {
+			parsed, err = parseRPSLText(rec.RPSLText())
+		}
 		if err != nil {
-			continue // skip unparseable records
+			continue // skip unparseable/unrecognised records
+		}
+		if _, ok := parsed.(Unrecognised); ok {
+			continue
 		}
 
 		updates = append(updates, Update{
@@ -137,6 +146,45 @@ func mapNRTMv4Action(action string) (string, error) {
 	default:
 		return "", fmt.Errorf("unknown NRTMv4 action: %s", action)
 	}
+}
+
+var reRoutePrimaryKey = regexp.MustCompile(`^(.+)(AS\d+)$`)
+
+// parseDeltaDeleteRecord parses an NRTMv4 delete record using its object_class and primary_key fields.
+// Delete records do not contain full RPSL text; they carry just enough to locate the object.
+func parseDeltaDeleteRecord(rec NRTMv4Record) (Record, error) {
+	if rec.PrimaryKey == "" || rec.ObjectClass == "" {
+		return nil, fmt.Errorf("delete record missing object_class or primary_key")
+	}
+	pk := strings.ToUpper(rec.PrimaryKey)
+	switch strings.ToLower(rec.ObjectClass) {
+	case "route":
+		prefix, origin, err := splitRoutePrimaryKey(pk)
+		if err != nil {
+			return nil, err
+		}
+		return Route{Prefix: prefix, Origin: origin}, nil
+	case "route6":
+		prefix, origin, err := splitRoutePrimaryKey(pk)
+		if err != nil {
+			return nil, err
+		}
+		return Route6{Prefix: prefix, Origin: origin}, nil
+	case "as-set":
+		return Macro{Name: pk}, nil
+	default:
+		return Unrecognised{Key: rec.ObjectClass}, nil
+	}
+}
+
+// splitRoutePrimaryKey splits a route/route6 primary key of the form "{prefix}{ASN}"
+// (e.g. "192.0.2.0/24AS65001") into prefix and origin components.
+func splitRoutePrimaryKey(pk string) (prefix, origin string, err error) {
+	match := reRoutePrimaryKey.FindStringSubmatch(pk)
+	if match == nil {
+		return "", "", fmt.Errorf("cannot parse route primary key %q: expected format <prefix>AS<n>", pk)
+	}
+	return match[1], match[2], nil
 }
 
 // validateNRTMv4FileHeader checks that the file header matches the expected values.

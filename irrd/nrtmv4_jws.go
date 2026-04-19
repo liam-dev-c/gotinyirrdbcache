@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"time"
 )
 
 // jwsHeader represents the parsed JWS JOSE header.
@@ -204,5 +205,40 @@ func ParseNotificationFileJSON(data []byte, source string) (*NotificationFile, e
 	if nf.Source != source {
 		return nil, fmt.Errorf("notification file: source %q does not match configured source %q", nf.Source, source)
 	}
+
+	// Timestamp must be within 24 hours
+	if nf.Timestamp != "" {
+		ts, err := time.Parse(time.RFC3339, nf.Timestamp)
+		if err == nil {
+			age := time.Since(ts)
+			if age < 0 {
+				age = -age
+			}
+			if age > 24*time.Hour {
+				return nil, fmt.Errorf("notification file: timestamp %s is older than 24 hours", nf.Timestamp)
+			}
+		}
+	}
+
+	// UNF version must equal max(snapshot.version, max_delta.version)
+	expectedVersion := nf.Snapshot.Version
+	for _, d := range nf.Deltas {
+		if d.Version > expectedVersion {
+			expectedVersion = d.Version
+		}
+	}
+	if nf.Version != expectedVersion {
+		return nil, fmt.Errorf("notification file: version %d should be %d (max of snapshot/delta versions)", nf.Version, expectedVersion)
+	}
+
+	// Deltas listed in the UNF must be contiguous
+	if len(nf.Deltas) > 0 {
+		for i := 1; i < len(nf.Deltas); i++ {
+			if nf.Deltas[i].Version != nf.Deltas[i-1].Version+1 {
+				return nil, fmt.Errorf("notification file: deltas are not contiguous (versions %d and %d)", nf.Deltas[i-1].Version, nf.Deltas[i].Version)
+			}
+		}
+	}
+
 	return &nf, nil
 }

@@ -9,8 +9,10 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"testing"
+	"time"
 )
 
 func makeTestEdDSAJWS(t *testing.T, payload []byte, privKey ed25519.PrivateKey) string {
@@ -216,19 +218,20 @@ func TestVerifyNotificationFile_UnsupportedAlgorithm(t *testing.T) {
 }
 
 func TestParseNotificationFileJSON(t *testing.T) {
-	data := []byte(`{
+	ts := time.Now().UTC().Format(time.RFC3339)
+	data := []byte(fmt.Sprintf(`{
 		"nrtm_version": 4,
 		"type": "notification",
 		"source": "RIPE",
 		"session_id": "abc-123",
 		"version": 42,
-		"timestamp": "2024-01-01T00:00:00Z",
+		"timestamp": %q,
 		"snapshot": {"version": 40, "url": "https://example.com/snap.json", "hash": "abc123"},
 		"deltas": [
 			{"version": 41, "url": "https://example.com/d41.json", "hash": "def456"},
 			{"version": 42, "url": "https://example.com/d42.json", "hash": "ghi789"}
 		]
-	}`)
+	}`, ts))
 
 	nf, err := ParseNotificationFileJSON(data, "RIPE")
 	if err != nil {
@@ -248,6 +251,56 @@ func TestParseNotificationFileJSON(t *testing.T) {
 	}
 	if nf.Snapshot.Version != 40 {
 		t.Errorf("snapshot version = %d, want 40", nf.Snapshot.Version)
+	}
+}
+
+func TestParseNotificationFileJSON_StaleTimestamp(t *testing.T) {
+	oldTS := time.Now().Add(-25 * time.Hour).UTC().Format(time.RFC3339)
+	data := []byte(fmt.Sprintf(`{
+		"nrtm_version": 4, "type": "notification", "source": "TEST",
+		"session_id": "s1", "version": 10, "timestamp": %q,
+		"snapshot": {"version": 10, "url": "http://x/s", "hash": "a"},
+		"deltas": []
+	}`, oldTS))
+	_, err := ParseNotificationFileJSON(data, "TEST")
+	if err == nil {
+		t.Fatal("expected error for stale timestamp")
+	}
+}
+
+func TestParseNotificationFileJSON_VersionMismatch(t *testing.T) {
+	ts := time.Now().UTC().Format(time.RFC3339)
+	// version=10 but snapshot is v5 and max delta is v8 → expected version=8
+	data := []byte(fmt.Sprintf(`{
+		"nrtm_version": 4, "type": "notification", "source": "TEST",
+		"session_id": "s1", "version": 10, "timestamp": %q,
+		"snapshot": {"version": 5, "url": "http://x/s", "hash": "a"},
+		"deltas": [
+			{"version": 6, "url": "http://x/d6", "hash": "b"},
+			{"version": 7, "url": "http://x/d7", "hash": "c"},
+			{"version": 8, "url": "http://x/d8", "hash": "d"}
+		]
+	}`, ts))
+	_, err := ParseNotificationFileJSON(data, "TEST")
+	if err == nil {
+		t.Fatal("expected error for version mismatch")
+	}
+}
+
+func TestParseNotificationFileJSON_NonContiguousDeltas(t *testing.T) {
+	ts := time.Now().UTC().Format(time.RFC3339)
+	data := []byte(fmt.Sprintf(`{
+		"nrtm_version": 4, "type": "notification", "source": "TEST",
+		"session_id": "s1", "version": 8, "timestamp": %q,
+		"snapshot": {"version": 5, "url": "http://x/s", "hash": "a"},
+		"deltas": [
+			{"version": 6, "url": "http://x/d6", "hash": "b"},
+			{"version": 8, "url": "http://x/d8", "hash": "d"}
+		]
+	}`, ts))
+	_, err := ParseNotificationFileJSON(data, "TEST")
+	if err == nil {
+		t.Fatal("expected error for non-contiguous deltas in UNF")
 	}
 }
 
